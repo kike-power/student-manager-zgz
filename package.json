@@ -1,0 +1,32 @@
+{
+  "name": "student-manager-zgz",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "build": "node scripts/build.js",
+    "test": "node --test test/*.test.js",
+    "check": "node scripts/check.js",
+    "bootstrap": "node scripts/bootstrap.js"
+  },
+  "dependencies": {
+    "acorn": "^8.19.0",
+    "chart.js": "^4.5.1",
+    "dompurify": "^3.4.16",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "firebase-admin": "^14.5.0",
+    "google-auth-library": "^10.3.0",
+    "helmet": "^8.1.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1",
+    "supertest": "^7.1.4"
+  }
+}
