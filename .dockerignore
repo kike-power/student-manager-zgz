@@ -16,3 +16,5 @@
 !scripts/
 !scripts/**
 !database.rules.json
+*_1.png
+*_1.ico

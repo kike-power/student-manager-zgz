@@ -3,8 +3,10 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { APP_NODES, fail, emailKey, corporateEmail, publicUser, validateUser, dataView, isDirector, pathParts, at, put, mutationUpdates, changedLeaves, assertWrite, validateAcademicChanges } from './policy.js';
+import { prepareFiles, assertFileReferences, authorizedFile } from './files.js';
 
 const directory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
 export function resolveUser(root, claims) {
@@ -18,7 +20,7 @@ function audit(root, user, action, detail) {
   root.app.auditoria ||= {};
   root.app.auditoria[randomUUID()] = {ts:Date.now(), userId:user.id, userNombre:user.nombre, tipo:action, detalle:detail};
 }
-export function createApp({ store, verifyIdentity, origin, production = true }) {
+export function createApp({ store, fileStore, verifyIdentity, origin, production = true }) {
   if (!origin || (production && new URL(origin).protocol !== 'https:')) throw new Error('PUBLIC_ORIGIN debe ser una URL HTTPS en producción.');
   const app = express();
   app.disable('x-powered-by');
@@ -65,21 +67,46 @@ export function createApp({ store, verifyIdentity, origin, production = true }) 
   });
   app.post('/api/database', async(req,res) => {
     const {path:writePath,op,value} = req.body || {};
-    const updates = mutationUpdates(writePath,op,value);
-    await transaction(req,(root,user) => {
+    const prepared=prepareFiles(value);
+    const updates = mutationUpdates(writePath,op,prepared.value);
+    const apply=(root,user,registrations={}) => {
       const current = root.app || {}, next = structuredClone(current);
       for (const [key,v] of Object.entries(updates)) put(next,pathParts(key),v);
       for (const [key,v] of Object.entries(updates)) {
         const parts = pathParts(key);
         assertWrite(user,current,next,parts);
         if (!isDirector(user)) for (const leaf of changedLeaves(at(current,parts),v,parts)) assertWrite(user,current,next,leaf);
+        for(const leaf of changedLeaves(at(current,parts),v,parts)) for(let length=leaf.length;length>0;length--) {
+          const parent=at(next,leaf.slice(0,length));
+          if(parent && typeof parent==='object' && 'fileId' in parent) assertFileReferences(user,root,parent,prepared.objects);
+        }
       }
+      assertFileReferences(user,root,updates,prepared.objects);
       validateAcademicChanges(current,next,updates);
       root.app=next;
+      root.files={...root.files,...registrations};
       audit(root,user,'Cambio de datos',Object.keys(updates).join(', ').slice(0,4000));
       return root;
-    });
+    };
+    // Check permissions before uploading bytes, and check them again at commit time.
+    apply(structuredClone(req.root),req.user);
+    if(prepared.objects.size && !fileStore) fail(503,'El almacenamiento de archivos no está configurado.');
+    const registrations={};
+    for(const file of prepared.objects.values()) registrations[file.id]=await fileStore.save(file);
+    await transaction(req,(root,user)=>apply(root,user,registrations));
     res.json({ok:true});
+  });
+  app.get('/api/files', async(req,res) => {
+    if(!fileStore) fail(503,'El almacenamiento de archivos no está configurado.');
+    const file=authorizedFile(req.user,req.root,req.query.path,req.query.quarantine==='1');
+    res.attachment(file.name);
+    // Never execute imported HTML or rely on a client-supplied content type.
+    res.set({'Content-Type':'application/octet-stream','Content-Length':String(file.size),'Content-Security-Policy':"default-src 'none'; sandbox",'X-Content-Type-Options':'nosniff'});
+    await pipeline(fileStore.stream(file.id),res);
+  });
+  app.get('/api/migration/quarantine', (req,res) => {
+    if(!isDirector(req.user)) fail(403,'Solo dirección puede revisar la migración.');
+    res.json({data:req.root.migrationQuarantine || {},migration:req.root.migration || {}});
   });
   app.post('/api/users', async(req,res) => {
     const id = req.body?.id || 'u'+randomUUID();
@@ -117,6 +144,7 @@ export function createApp({ store, verifyIdentity, origin, production = true }) 
   app.use('/api', (_req,res) => res.status(404).json({error:'Ruta no encontrada.'}));
   app.use(express.static(directory, {dotfiles:'deny',index:'index.html',maxAge:0}));
   app.use((error,_req,res,_next) => {
+    if(res.headersSent) {res.destroy();return;}
     const status=error.status || 500;
     if (status>=500) console.error('Request failed:',error.message);
     res.status(status).json({error:status>=500 ? 'No se ha podido completar la operación.' : error.message});

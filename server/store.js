@@ -11,7 +11,11 @@ export function createStore({projectId, databaseURL}) {
     async transaction(change) {
       let failure;
       const result = await root.transaction(value => {
-        try { return change(value || {}); }
+        try {
+          const next=change(value || {});
+          if(Buffer.byteLength(JSON.stringify(next))>8*1024*1024) throw new Error('Los metadatos superan el tamaño seguro; revisa archivado y retención.');
+          return next;
+        }
         catch(error) { failure=error; return undefined; }
       }, undefined, false);
       if (!result.committed) throw failure || new Error('La operación no pudo completarse.');

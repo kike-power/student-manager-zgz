@@ -697,9 +697,8 @@ tbody td{padding:10px 16px;color:var(--tx);vertical-align:middle}
           <div class="card" id="backupCard">
             <div class="card-h"><h3>🛡️ Copia de seguridad</h3></div>
             <div style="padding:16px 18px">
-              <p style="font-size:13px;color:var(--tx2);margin-bottom:10px">Descarga un archivo <strong>.json</strong> con toda la base de datos de Firebase tal y como está ahora mismo: alumnado, notas, tareas, faltas, usuarios, documentos adjuntos, etc. Es el mismo formato que exporta la consola de Firebase.</p>
-              <label class="rub-check" style="margin-top:0"><input type="checkbox" id="backupSinPass" checked disabled> Excluir usuarios del archivo (siempre aplicado)</label>
-              <p style="font-size:12px;color:var(--wa);margin:4px 0 12px">⚠️ El archivo contiene datos personales del alumnado y, salvo que marques la casilla, las contraseñas tal y como están guardadas. Guárdalo en un lugar seguro y no lo compartas.</p>
+              <p style="font-size:13px;color:var(--tx2);margin-bottom:10px">Descarga un archivo <strong>.json</strong> con los datos académicos y las referencias a los adjuntos. Los archivos están en almacenamiento privado y deben incluirse en la copia del bucket; este JSON por sí solo no los contiene.</p>
+              <p style="font-size:12px;color:var(--wa);margin:4px 0 12px">⚠️ El archivo contiene datos personales del alumnado. Guárdalo en un lugar seguro; no incluye usuarios ni el contenido de los adjuntos.</p>
               <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
                 <button class="btn btn-p" id="btnBackup" onclick="exportarCopiaSeguridad()">⬇ Descargar copia de seguridad (.json)</button>
                 <span id="backupEstado" style="font-size:12px;color:var(--tx2)"></span>
@@ -714,7 +713,13 @@ tbody td{padding:10px 16px;color:var(--tx);vertical-align:middle}
               </div>
             </div>
           </div>
-        </div>
+        <div class="card" style="padding:16px;margin-top:16px">
+  <h3>Revisión de la migración</h3>
+  <p>Consulta los perfiles históricos y los archivos conservados sin un vínculo válido.</p>
+  <button class="btn btn-sm" id="reviewMigrationButton">Revisar registros apartados</button>
+  <div id="migrationReview" style="margin-top:12px"></div>
+</div>
+</div>
 
         <div id="conftab-auditoria" style="display:none">
           <div class="card">
@@ -1877,8 +1882,9 @@ tbody td{padding:10px 16px;color:var(--tx);vertical-align:middle}
 
 
 <script type="module">
-import {db, ref, get, set, update, remove, onValue, serverTimestamp, api, sync, stopSync} from './client/database.js';
+import {db, ref, get, set, update, remove, onValue, serverTimestamp, api, sync, stopSync, downloadFile} from './client/database.js';
 import './client/sanitize.js';
+import {initMigrationReview} from './client/migration.js';
 
 const MESES=[{n:'Septiembre',m:9,d:22},{n:'Octubre',m:10,d:23},{n:'Noviembre',m:11,d:21},
   {n:'Diciembre',m:12,d:17},{n:'Enero',m:1,d:21},{n:'Febrero',m:2,d:20},
@@ -3231,7 +3237,7 @@ function renderAuditoria() {
   ${entradas.map(e=>{
     const d=new Date(e.ts);
     const f=`${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-    return `<tr><td style="white-space:nowrap;color:var(--tx3);font-size:12px">${f}</td><td>${e.userNombre}</td><td><span class="badge">${e.tipo}</span></td><td style="color:var(--tx2)">${e.detalle}</td></tr>`;
+    return `<tr><td style="white-space:nowrap;color:var(--tx3);font-size:12px">${f}</td><td>${e.userNombre}</td><td><span class="badge">${e.tipo}</span>${e.origen==='importada'?' <small>Histórico importado</small>':''}</td><td style="color:var(--tx2)">${e.detalle}</td></tr>`;
   }).join('')}
   </tbody></table>`;
 }
@@ -4295,15 +4301,15 @@ window.renderTareas = function renderTareas(){
   const soloLectura = isSelfService(cu);
   const puedeSubirPropio = isPureAlumno(cu); // solo el propio alumno sube su entrega, no el tutor legal
   document.getElementById('tbTareas').innerHTML=list.length?list.map(t=>{
-    const matProf = t.archivoProf ? `<button class="btn btn-sm btn-ic" onclick="verArchivoTarea('${aid}','${t.id}','archivoProf')" title="${t.archivoProf.nombre}">👁 Ver</button>${soloLectura?'':`<button class="btn btn-sm btn-ic btn-d" onclick="borrarArchivoTarea('${aid}','${t.id}','archivoProf')">🗑</button>`}` : '<span style="color:var(--tx3);font-size:12px">—</span>';
+    const matProf = t.archivoProf ? `<button class="btn btn-sm btn-ic" onclick="verArchivoTarea('${aid}','${t.id}','archivoProf')" title="${t.archivoProf.nombre}">⬇ Descargar</button>${soloLectura?'':`<button class="btn btn-sm btn-ic btn-d" onclick="borrarArchivoTarea('${aid}','${t.id}','archivoProf')">🗑</button>`}` : '<span style="color:var(--tx3);font-size:12px">—</span>';
     let matAlumno;
     if(puedeSubirPropio && tareaVencida(t)) {
       // Plazo vencido: el alumno solo puede ver lo que entregó, ya no puede subir, sustituir ni borrar
-      matAlumno = `${t.archivoAlumno?`<button class="btn btn-sm btn-ic" onclick="verArchivoTarea('${aid}','${t.id}','archivoAlumno')" title="${t.archivoAlumno.nombre}">👁 Ver</button>`:''}<span style="color:var(--tx3);font-size:12px" title="La fecha de entrega ha vencido">🔒 Plazo cerrado</span>`;
+      matAlumno = `${t.archivoAlumno?`<button class="btn btn-sm btn-ic" onclick="verArchivoTarea('${aid}','${t.id}','archivoAlumno')" title="${t.archivoAlumno.nombre}">⬇ Descargar</button>`:''}<span style="color:var(--tx3);font-size:12px" title="La fecha de entrega ha vencido">🔒 Plazo cerrado</span>`;
     } else if(puedeSubirPropio) {
-      matAlumno = `${t.archivoAlumno?`<button class="btn btn-sm btn-ic" onclick="verArchivoTarea('${aid}','${t.id}','archivoAlumno')" title="${t.archivoAlumno.nombre}">👁 Ver</button><button class="btn btn-sm btn-ic btn-d" onclick="borrarArchivoTarea('${aid}','${t.id}','archivoAlumno')" title="Eliminar y volver a subir">🗑</button>`:''}<button class="btn btn-sm btn-ic" onclick="subirEntregaAlumno('${aid}','${t.id}')">${t.archivoAlumno?'🔄':'📎 Subir'}</button>`;
+      matAlumno = `${t.archivoAlumno?`<button class="btn btn-sm btn-ic" onclick="verArchivoTarea('${aid}','${t.id}','archivoAlumno')" title="${t.archivoAlumno.nombre}">⬇ Descargar</button><button class="btn btn-sm btn-ic btn-d" onclick="borrarArchivoTarea('${aid}','${t.id}','archivoAlumno')" title="Eliminar y volver a subir">🗑</button>`:''}<button class="btn btn-sm btn-ic" onclick="subirEntregaAlumno('${aid}','${t.id}')">${t.archivoAlumno?'🔄':'📎 Subir'}</button>`;
     } else {
-      matAlumno = t.archivoAlumno ? `<button class="btn btn-sm btn-ic" onclick="verArchivoTarea('${aid}','${t.id}','archivoAlumno')" title="${t.archivoAlumno.nombre}">👁 Ver</button>${soloLectura?'':`<button class="btn btn-sm btn-ic btn-d" onclick="borrarArchivoTarea('${aid}','${t.id}','archivoAlumno')" title="Eliminar la entrega del alumno">🗑</button>`}` : '<span style="color:var(--tx3);font-size:12px">—</span>';
+      matAlumno = t.archivoAlumno ? `<button class="btn btn-sm btn-ic" onclick="verArchivoTarea('${aid}','${t.id}','archivoAlumno')" title="${t.archivoAlumno.nombre}">⬇ Descargar</button>${soloLectura?'':`<button class="btn btn-sm btn-ic btn-d" onclick="borrarArchivoTarea('${aid}','${t.id}','archivoAlumno')" title="Eliminar la entrega del alumno">🗑</button>`}` : '<span style="color:var(--tx3);font-size:12px">—</span>';
     }
     return `<tr>
     <td style="max-width:260px;overflow-wrap:anywhere">${t.desc}</td><td style="color:var(--tx2)">${t.materia}</td><td style="color:var(--tx2)">${t.fecha||'—'}</td>
@@ -4349,20 +4355,14 @@ function leerArchivoComoDataURL(file) {
 // salía en blanco: en su lugar se descargan automáticamente para abrirlos con la
 // aplicación correspondiente (Word, Excel, etc.).
 const EXT_PREVISUALIZABLES = ['pdf','jpg','jpeg','png','gif','webp','svg','bmp'];
-function abrirArchivoVisor(nombre, dataUrl) {
-  if(!/^data:(application\/(pdf|zip|msword|vnd\.[a-z0-9.+-]+)|image\/(jpeg|png|gif|webp));base64,[A-Za-z0-9+/=]+$/.test(dataUrl||'')){alert('Formato de archivo no permitido.');return;}
-  const [header,encoded]=dataUrl.split(',');
-  const mime=header.slice(5,header.indexOf(';'));
-  const bytes=Uint8Array.from(atob(encoded),c=>c.charCodeAt(0));
-  const url=URL.createObjectURL(new Blob([bytes],{type:mime}));
-  const link=document.createElement('a');link.href=url;link.download=nombre||'archivo';link.rel='noopener';link.click();
-  setTimeout(()=>URL.revokeObjectURL(url),60000);
+async function abrirArchivoVisor(nombre, path) {
+  try {await downloadFile(path,nombre);} catch(e) {alert(e.message);}
 }
 
 window.verArchivoTarea = (aid, tid, campo) => {
   const d = DB.tareas[aid]?.[tid]?.[campo];
-  if(!d || !d.data) { alert('Archivo no disponible'); return; }
-  abrirArchivoVisor(d.nombre, d.data);
+  if(!d || !d.fileId) { alert('Archivo no disponible'); return; }
+  return abrirArchivoVisor(d.nombre, `tareas/${aid}/${tid}/${campo}`);
 };
 
 window.borrarArchivoTarea = async (aid, tid, campo) => {
@@ -6028,7 +6028,7 @@ async function loadAlumnoDocs(aid) {
                   : d.nombre?.match(/\.(jpg|jpeg|png|gif)$/i) ? '🖼️' : '📎';
       const kb = d.size ? (d.size/1024).toFixed(0)+' KB' : '';
       const fecha = d.fecha || '';
-      const tieneData = !!d.data;
+      const tieneData = !!d.fileId;
       return `<div class="doc-item">
         <span class="doc-icon">${icono}</span>
         <div class="doc-info">
@@ -6036,7 +6036,7 @@ async function loadAlumnoDocs(aid) {
           <div class="dm">${[fecha, kb].filter(Boolean).join(' · ')}</div>
         </div>
         ${tieneData
-          ? `<button class="btn btn-sm" onclick="verDoc('${aid}','${d.id}')">⬇ Ver</button>`
+          ? `<button class="btn btn-sm" onclick="verDoc('${aid}','${d.id}')">⬇ Descargar</button>`
           : `<span style="font-size:11px;color:var(--tx3)">Sin previa</span>`}
         <button class="btn btn-sm btn-d" onclick="borrarDoc('${aid}','${d.id}')">🗑</button>
       </div>`;
@@ -6058,8 +6058,8 @@ window.verDoc = async (aid, docId) => {
     const snap = await get(ref(db, `alumnos/${aid}/docs/${docId}`));
     d = snap.val();
   }
-  if(!d || !d.data) { alert('Archivo no disponible'); return; }
-  abrirArchivoVisor(d.nombre, d.data);
+  if(!d || !d.fileId) { alert('Archivo no disponible'); return; }
+  return abrirArchivoVisor(d.nombre, `alumnos/${aid}/docs/${docId}`);
 };
 
 window.subirJustificante = async () => {
@@ -6220,7 +6220,7 @@ window.cargarJustificantesAlumno = async function(aidDirecto) {
           <div class="dn">${d.nombre||'Archivo'}</div>
           <div class="dm">${meta}</div>
         </div>
-        <button class="btn btn-sm" onclick="verDocGlobal('${aid}','${d.id}')">👁 Ver</button>
+        <button class="btn btn-sm" onclick="verDocGlobal('${aid}','${d.id}')">⬇ Descargar</button>
         ${soloLectura?'':`<button class="btn btn-sm btn-d" onclick="borrarDocGlobal('${aid}','${d.id}')">🗑</button>`}
       </div>`;
     }).join('');
@@ -6237,8 +6237,8 @@ window.verDocGlobal = async (aid, docId) => {
     const snap = await get(ref(db, `alumnos/${aid}/docs/${docId}`));
     if(!snap.exists()) { alert('Archivo no encontrado'); return; }
     const d = snap.val();
-    if(!d.data) { alert('Este archivo no tiene datos guardados'); return; }
-    abrirArchivoVisor(d.nombre, d.data);
+    if(!d.fileId) { alert('Este archivo no tiene datos guardados'); return; }
+    return abrirArchivoVisor(d.nombre, `alumnos/${aid}/docs/${docId}`);
   } catch(e) {
     alert('Error al abrir: ' + e.message);
   }
@@ -7732,6 +7732,8 @@ document.addEventListener('keydown', e => {
     document.querySelectorAll('.overlay.open').forEach(o => o.classList.remove('open'));
   }
 });
+
+initMigrationReview();
 
 // ─── PWA: registro del service worker (instalación en Android/iOS) ─────────
 if ('serviceWorker' in navigator) {

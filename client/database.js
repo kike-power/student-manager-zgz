@@ -11,6 +11,18 @@ export async function api(url, {method='GET',body} = {}) {
   }
   return data;
 }
+export async function downloadFile(path,name,{quarantine=false}={}) {
+  const response=await fetch('/api/files?path='+encodeURIComponent(path)+(quarantine?'&quarantine=1':''),{credentials:'same-origin',cache:'no-store'});
+  if(!response.ok) {
+    let message='No se ha podido descargar el archivo.';
+    try{message=(await response.json()).error || message;}catch{}
+    if(response.status===401 || response.status===403) window.dispatchEvent(new CustomEvent('access-ended',{detail:message}));
+    throw new Error(message);
+  }
+  const url=URL.createObjectURL(await response.blob());
+  const link=document.createElement('a');link.href=url;link.download=name || 'archivo';link.rel='noopener';document.body.append(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
 export const db = {};
 export const ref = (_db,path) => String(path);
 const result = value => ({val:() => value,exists:() => value!==null && value!==undefined});

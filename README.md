@@ -49,8 +49,8 @@ El servidor de producción nunca permite saltarse IAP ni usa usuarios de demostr
 
 ## Configuración
 
-Variables obligatorias: `GOOGLE_CLOUD_PROJECT`, `FIREBASE_DATABASE_URL`, `IAP_AUDIENCE`
-y `PUBLIC_ORIGIN`. Ver `.env.example`. En producción el origen debe ser HTTPS y debe
+Variables obligatorias: `GOOGLE_CLOUD_PROJECT`, `FIREBASE_DATABASE_URL`, `ATTACHMENTS_BUCKET`,
+`IAP_AUDIENCE` y `PUBLIC_ORIGIN`. Ver `.env.example`. En producción el origen debe ser HTTPS y debe
 coincidir con la URL que usa el navegador para permitir escrituras.
 
 La cuenta de servicio de Cloud Run usa credenciales implícitas (ADC); no subir claves
@@ -58,9 +58,12 @@ JSON, tokens, backups de datos o archivos `.env` a GitHub. El cliente no recibe 
 configuración Firebase y todas las reglas de acceso directo de Realtime Database son
 `false`. El Admin SDK del servidor omite esas reglas: la autorización se aplica en la API.
 
-La base nueva usa `/app` para datos y `/access` para el índice de invitaciones. No conectar
-esta versión a la base antigua sin una migración revisada: su estructura y sus usuarios
-con contraseña no son compatibles con el nuevo sistema.
+La base nueva usa `/app` para datos, `/access` para invitaciones y `/files` para el registro
+de objetos privados. `/migrationQuarantine` conserva datos históricos apartados y
+`/migration` identifica el export importado. El navegador recibe solo metadatos de archivos;
+las descargas pasan por el servidor y vuelven a comprobar identidad y permisos. No hay
+URLs públicas ni enlaces firmados reutilizables. Todos los formatos, incluido HTML, se
+descargan con `Content-Disposition: attachment`, tipo binario y `nosniff`.
 
 ## Google Cloud
 
@@ -76,10 +79,10 @@ región `europe-west1`, con una instancia nueva de Realtime Database en esa mism
 4. Dar acceso a IAP a los dominios corporativos (o un grupo Workspace gestionado), y añadir
    en la aplicación los usuarios activos. Si los dominios son aliases o pertenecen a otra
    organización, verificar el acceso Workspace en IAP con una cuenta real de cada uno.
-5. Inicializar los administradores con `npm run bootstrap` usando ADC y la variable
-   `BOOTSTRAP_ADMINS` con los emails completos. El script se niega a inicializar si ya
-   existe un administrador activo. El propietario ha indicado Kike y Mar Esteban;
-   confirmar los emails completos antes de ejecutarlo.
+5. Para una instalación vacía sin migración, inicializar los administradores con
+   `npm run bootstrap` y `BOOTSTRAP_ADMINS`. Para una migración, la herramienta siguiente
+   crea esos perfiles en el paquete: no ejecutar bootstrap antes, porque la importación
+   exige un destino vacío y se niega a sobrescribir datos o usuarios existentes.
 6. Desplegar el contenedor con IAP activado y sin invocación anónima. Solo el agente
    de IAP debe tener el permiso para invocar el servicio. IAP y la verificación firmada
    del backend deben funcionar también en la URL directa de Cloud Run.
@@ -104,10 +107,12 @@ Configurar el origen canónico después de obtener la URL del servicio.
   externa, usuario sin alta y usuario desactivado deben ser rechazados.
 - Crear grupos, módulos y asignaciones, y validar los flujos académicos con sus usuarios.
 - Los avisos por email están desactivados. Falta elegir/configurar un proveedor en backend.
-- Los adjuntos mantienen el formato Base64 recibido, con validación en servidor y descarga
-  segura, para conservar los flujos existentes. Migrarlos a Cloud Storage privado mejora
-  tráfico/memoria. La API lee y transacciona el documento completo: revisar esa arquitectura
-  antes de importar una base grande o muchos adjuntos.
+- Los adjuntos se almacenan en Cloud Storage privado, deduplicados por hash del contenido.
+  El bucket debe tener acceso uniforme y prevención de acceso público. Otorgar al runtime
+  `roles/storage.objectCreator` y `roles/storage.objectViewer` solo en ese bucket: el borrado
+  desde la aplicación elimina la referencia, no el objeto compartido ni otras entregas.
+  La API todavía transacciona los metadatos completos, ahora compactos, con un límite
+  preventivo de 8 MiB. Revisar archivado y retención antes de superar ese volumen.
 - Las copias siguen siendo manuales desde dirección. La restauración de datos es atómica;
   no restaura usuarios ni identidad. Configurar backups automáticos y probar recuperación.
 - La auditoría es creada por el servidor junto a cada cambio, sin edición desde el cliente.
@@ -116,7 +121,52 @@ Configurar el origen canónico después de obtener la URL del servicio.
 - Configurar alertas de errores y presupuesto y el despliegue CI con Workload Identity
   Federation. El workflow incluido valida cada push/PR; el despliegue aún es explícito.
 
-No se han migrado datos personales de la aplicación original.
+## Migración de un export existente
+
+La herramienta usa Node y Python 3 (biblioteca estándar para leer el ZIP). Solo admite
+un JSON dentro del archivo ZIP, limita su tamaño y no extrae rutas del ZIP al disco.
+La preparación se guarda en `.review/`, con directorios privados y archivos con permiso
+600. Ese directorio está excluido de GitHub, del contexto Docker y de Cloud Build.
+
+```sh
+node scripts/migrate.js prepare \
+  --source "$SOURCE_EXPORT_ZIP" --output .review/migration \
+  --admins "$MIGRATION_ADMINS"
+```
+
+La preparación elimina credenciales de todos los registros, conserva los IDs académicos,
+extrae y deduplica los archivos, mantiene las calificaciones y aparta las entregas sin
+alumno válido. Conserva las cuentas históricas sin dar acceso a familias/alumnos. Solo
+los administradores indicados obtienen dirección; cualquier antiguo director distinto
+pierde ese privilegio y queda pendiente de revisión si no tenía otro rol. La auditoría
+antigua queda marcada como importada.
+
+`report.json` registra recuentos y referencias; `manifest.json` fija el hash del export,
+de los metadatos y de cada archivo. El JSON de la base ya no contiene adjuntos Base64.
+No subir estos archivos ni el export original a GitHub.
+
+Con ADC de una cuenta autorizada y las variables de `.env.example` configuradas:
+
+```sh
+# Subida privada y reanudable, sin importar aún la base
+node scripts/migrate.js upload --stage .review/migration \
+  --project="$GOOGLE_CLOUD_PROJECT"
+
+# Importación en una base nueva y vacía, después de subir/verificar los objetos
+node scripts/migrate.js apply --stage .review/migration \
+  --project="$GOOGLE_CLOUD_PROJECT"
+```
+
+El bucket debe existir y ser privado antes de ejecutar upload/apply. La subida no
+sobrescribe objetos existentes; verifica que coincidan el hash y el tamaño. La importación
+se realiza en una transacción, no modifica la base original y compara el contenido tras
+leerlo de Firebase, tolerando su normalización de arrays y nodos vacíos. Si el destino ya
+tiene datos, se detiene. Ejecutar de nuevo una migración ya aplicada no la sobrescribe.
+
+Dirección puede revisar los perfiles históricos y descargar la entrega apartada desde
+**Configuración → Seguridad → Revisión de la migración**. La copia JSON del panel contiene
+solo datos académicos y referencias: la recuperación completa también requiere copia del
+bucket y de los índices/perfiles privados gestionados por el servidor.
 
 ## Fuentes
 

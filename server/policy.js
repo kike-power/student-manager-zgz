@@ -65,15 +65,14 @@ export function validateData(value, depth = 0) {
   if (typeof value === 'string') {
     // Keep legacy text rendering safe while the UI is gradually split into components.
     if (/[<>\x00-\x08\x0b\x0c\x0e-\x1f]/.test(value)) fail(400, 'El texto no admite etiquetas HTML.');
-    if (value.startsWith('data:')) {
-      if (!/^data:(application\/(pdf|zip|msword|vnd\.[a-z0-9.+-]+)|image\/(jpeg|png|gif|webp));base64,[A-Za-z0-9+/=]+$/.test(value) || value.length > 7_000_000) fail(400, 'Formato o tamaño de archivo no permitido.');
-    } else if (value.length > 20_000) fail(400, 'Texto demasiado largo.');
+    if (value.startsWith('data:')) fail(400,'Los adjuntos deben almacenarse fuera de la base de datos.');
+    if (value.length > 20_000) fail(400, 'Texto demasiado largo.');
     return;
   }
   if (!value || typeof value !== 'object') fail(400, 'Datos inválidos.');
   for (const [key, item] of Object.entries(value)) {
     pathParts(key);
-    if (key.includes('/') || ['pass', 'password', 'uidIndex', '__security', '.sv'].includes(key)) fail(400, 'Campo no permitido.');
+    if (key.includes('/') || ['pass', 'password', 'uidIndex', '__security', '.sv', 'data'].includes(key)) fail(400, 'Campo no permitido.');
     validateData(item, depth + 1);
   }
 }
