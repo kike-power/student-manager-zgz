@@ -67,6 +67,14 @@ descargan con `Content-Disposition: attachment`, tipo binario y `nosniff`.
 
 ## Google Cloud
 
+Desplegado el 14 de octubre de 2026 en
+[Gestión de Aula](https://student-manager-zgz-271453855324.europe-west1.run.app).
+La base es `https://gestion-alumnos-fp-zgz.europe-west1.firebasedatabase.app`.
+Se ha probado el acceso real de Kike como director, la lectura académica y una descarga
+privada mediante IAP. Kike y Mar tienen perfiles activos de dirección. La migración
+conserva 15 alumnos, 285 tareas, 118 calificaciones y 383 referencias a 185 archivos;
+una tarea huérfana queda disponible para revisión. Los datos privados no están en GitHub.
+
 Destino acordado: proyecto `gestion-alumnos-fp-zgz`, Cloud Run `student-manager-zgz`,
 región `europe-west1`, con una instancia nueva de Realtime Database en esa misma región.
 
@@ -103,7 +111,7 @@ Configurar el origen canónico después de obtener la URL del servicio.
 
 ## Operación y trabajo pendiente antes de compartir con empleados
 
-- Probar el SSO real con ambos administradores y los tres dominios; cuenta personal,
+- Completar el SSO real con Mar y cuentas de los tres dominios; cuenta personal,
   externa, usuario sin alta y usuario desactivado deben ser rechazados.
 - Crear grupos, módulos y asignaciones, y validar los flujos académicos con sus usuarios.
 - Los avisos por email están desactivados. Falta elegir/configurar un proveedor en backend.
@@ -115,6 +123,11 @@ Configurar el origen canónico después de obtener la URL del servicio.
   preventivo de 8 MiB. Revisar archivado y retención antes de superar ese volumen.
 - Las copias siguen siendo manuales desde dirección. La restauración de datos es atómica;
   no restaura usuarios ni identidad. Configurar backups automáticos y probar recuperación.
+  Existe una copia inicial completa verificada en
+  `gs://gestion-alumnos-fp-zgz-backups/snapshots/2026-10-14-initial/`: `database.json`
+  incluye todos los nodos privados, `objects/` contiene los 185 archivos y `manifest.json`
+  registra la fecha y el hash de la base. El bucket es privado y el runtime no tiene
+  permisos sobre él. Esta copia inicial no sustituye los backups periódicos.
 - La auditoría es creada por el servidor junto a cada cambio, sin edición desde el cliente.
   Está almacenada en la misma base: establecer retención y exportación protegida si se
   necesita trazabilidad independiente de los administradores del proyecto.
