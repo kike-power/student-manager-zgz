@@ -65,9 +65,9 @@ export function mountMailRoutes({app,store,mail,verifyIdentity,resolveUser}) {
     }catch(error){if(error.status)next(error);else next(Object.assign(new Error('No se ha podido conectar Google. Repite la autorización desde Configuración → Correo.'),{status:502}));}
   });
   app.post('/api/mail/notifications',async(req,res)=>{
-    const current=await provider().status();if(!current.enabled||!current.connected)fail(503,'Falta autorizar el correo en Configuración → Correo.');
     const initial=notificationPlan(req.root,req.user,req.body);
     if(!initial.recipients.length)return res.json({ok:false,motivo:initial.skipReason||'sin-email',notas:initial.notes});
+    const current=await provider().status();if(!current.enabled||!current.connected)fail(503,'Falta autorizar el correo en Configuración → Correo.');
     const sent=[],errors=[],skipped=[];
     for(const recipient of initial.recipients) {
       const key=hash(JSON.stringify([initial.aid,initial.kind,initial.event,recipient.email])), attempt=randomUUID();let plan,claimed=false,blockedReason;

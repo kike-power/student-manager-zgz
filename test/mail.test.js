@@ -70,3 +70,8 @@ test('edited contact details supersede historical addresses, without revealing g
  const f=fixture();f.root().app.alumnos.a.emailAlumno='new-pupil@example.com';f.root().app.alumnos.a.emailTutor='new-family@example.com';
  const plan=notificationPlan(f.root(),teacher,{kind:'task',aid:'a',tid:'t'});assert.deepEqual(plan.recipients.map(r=>r.email),['new-pupil@example.com','new-family@example.com']);
 });
+
+test('adult absences do not attempt email or require a connected mailbox',async()=>{
+ const f=fixture(()=>{throw Error('must not send');});f.root().app.alumnos.a.fecha='2000-01-01';f.mail.status=()=>{throw Error('must not contact Gmail');};
+ const result=await f.call('post','/api/mail/notifications').send({kind:'absence',aid:'a',sesKey:madridDate()+'_A_Math'}).expect(200);assert.equal(result.body.motivo,'no-aplica');
+});
