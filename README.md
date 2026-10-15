@@ -114,7 +114,7 @@ Configurar el origen canónico después de obtener la URL del servicio.
 - Completar el SSO real con Mar y cuentas de los tres dominios; cuenta personal,
   externa, usuario sin alta y usuario desactivado deben ser rechazados.
 - Crear grupos, módulos y asignaciones, y validar los flujos académicos con sus usuarios.
-- Los avisos por email están desactivados. Falta elegir/configurar un proveedor en backend.
+- Los avisos usan Gmail API desde el servidor. Falta autorizar el buzón remitente antes de activar los envíos; ver la configuración de correo.
 - Los adjuntos se almacenan en Cloud Storage privado, deduplicados por hash del contenido.
   El bucket debe tener acceso uniforme y prevención de acceso público. Otorgar al runtime
   `roles/storage.objectCreator` y `roles/storage.objectViewer` solo en ese bucket: el borrado
@@ -133,6 +133,52 @@ Configurar el origen canónico después de obtener la URL del servicio.
   necesita trazabilidad independiente de los administradores del proyecto.
 - Configurar alertas de errores y presupuesto y el despliegue CI con Workload Identity
   Federation. El workflow incluido valida cada push/PR; el despliegue aún es explícito.
+
+## Configuración de correo con Google
+
+Remitente acordado: `thepowerfpzaragoza@thepower.education`. Debe ser un buzón de Gmail
+Workspace con acceso propio; un grupo o alias requiere revisar primero la autorización.
+La integración está preparada para Gmail API con OAuth de ese buzón, sin delegación global
+del dominio. La aplicación pide `gmail.send`, `openid` y `email`: envío e identificación
+de la cuenta autorizada. No solicita lectura del correo.
+
+1. Habilitar Gmail API y Secret Manager en este proyecto. Crear un cliente OAuth de tipo
+   **Aplicación web** en Google Auth Platform, con audiencia **Interna** de la organización.
+   Usar como URI de redirección autorizada exclusivamente:
+   `https://student-manager-zgz-271453855324.europe-west1.run.app/oauth/gmail/callback`.
+   No usar un cliente externo en pruebas para producción: sus autorizaciones pueden caducar.
+2. Guardar el JSON descargado del cliente OAuth como una versión del secreto
+   `student-manager-mail-oauth` en Secret Manager. No incluirlo en Git ni enviarlo al chat.
+   El secreto `student-manager-mail-token` empieza vacío y lo completa la autorización.
+   Ambos secretos están limitados a `europe-west1`. El runtime tiene lectura de esos dos
+   secretos y permiso para añadir versiones solo al secreto del token.
+3. Configurar `MAIL_SENDER` y `MAIL_ENABLED=true` en Cloud Run. Hasta completar OAuth,
+   cualquier petición de envío se rechaza indicando que falta autorizar el correo.
+4. Entrar como director en **Configuración → Correo → Autorizar cuenta de Google**.
+   Autorizar exactamente el buzón remitente, con el permiso de envío. Se verifica la cuenta
+   mediante el ID token de Google y se guarda el refresh token exclusivamente en Secret Manager.
+   El flujo usa PKCE y estado privado de un solo uso que caduca a los diez minutos, ligado
+   al administrador que lo inició. El callback sigue protegido por IAP.
+5. Probar un aviso a un destinatario acordado antes de usarlo con alumnado y familias.
+   Ninguna prueba automática envía correos reales. Para suspender los envíos, establecer
+   `MAIL_ENABLED=false`; para retirar el permiso, revocarlo en la cuenta de Google.
+
+El servidor obtiene destinatarios de la ficha académica y, si faltan, de los contactos
+históricos conservados en la migración. Una dirección editada en la ficha sustituye a la
+histórica. Esto no reactiva las cuentas de alumnos o familiares. Los avisos de ausencias
+registradas llegan al tutor legal solo si el alumno es menor con fecha de nacimiento válida.
+Los recordatorios de tareas pendientes que vencen en cero a tres días llegan al alumno y,
+si es menor, a su tutor. Los profesores solo pueden solicitar avisos de sus módulos;
+los tutores, de sus grupos; dirección tiene acceso al conjunto. No se aceptan destinatarios
+ni textos arbitrarios desde el navegador.
+
+Cada destinatario recibe un mensaje separado. El registro privado de envíos evita duplicados
+concurrentes y repeticiones durante 24 horas; solo dirección puede forzar el reenvío de un
+mensaje ya aceptado. No hay reintentos automáticos tras una respuesta incierta de Gmail:
+dirección debe revisar el correo enviado antes de intervenir. La ficha muestra el historial
+y distingue aceptación por Gmail, error y envío sin confirmar. Aceptación no prueba entrega
+ni lectura. Los avisos requieren una acción en la aplicación: registrar asistencia o pulsar
+el envío de recordatorios; no se ha instalado un proceso programado de envíos masivos.
 
 ## Migración de un export existente
 

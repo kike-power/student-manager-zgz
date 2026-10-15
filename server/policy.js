@@ -95,7 +95,7 @@ function moduleAllowed(user, root, group, module) {
 function pickModules(user, root, group, modules) {
   return Object.fromEntries(Object.entries(modules || {}).filter(([mk]) => moduleAllowed(user, root, group, mk)));
 }
-function sessionModule(root, group, key) {
+export function sessionModule(root, group, key) {
   const prefix = /^\d{4}-\d{2}-\d{2}_/.exec(key);
   if (!prefix) return null;
   const rest = key.slice(prefix[0].length), groupPrefix = safeKey(group) + '_';

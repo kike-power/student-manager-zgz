@@ -670,6 +670,7 @@ tbody td{padding:10px 16px;color:var(--tx);vertical-align:middle}
           <div class="ftab" id="cftab-horario" onclick="switchConfigTab('horario')">🕐 Horarios y evaluación</div>
           <div class="ftab" id="cftab-asignacion" onclick="switchConfigTab('asignacion')">📋 Asignación</div>
 
+          <div class="ftab" id="cftab-emailjs" onclick="switchConfigTab('emailjs')">📧 Correo</div>
           <div class="ftab" id="cftab-seguridad" onclick="switchConfigTab('seguridad')">🛡️ Seguridad</div>
           <div class="ftab" id="cftab-auditoria" onclick="switchConfigTab('auditoria')">🧾 Auditoría</div>
         </div>
@@ -690,7 +691,7 @@ tbody td{padding:10px 16px;color:var(--tx);vertical-align:middle}
         </div>
 
         <div id="conftab-emailjs" style="display:none">
-          <p>Los avisos por email requieren configurar un proveedor en el servidor. No están activos.</p><div id="emailjsWrap" hidden></div>
+          <div class="card" style="padding:18px"><h3>📧 Envío de avisos</h3><div id="mailConfig"></div></div>
         </div>
 
         <div id="conftab-seguridad" style="display:none">
@@ -1554,6 +1555,7 @@ tbody td{padding:10px 16px;color:var(--tx);vertical-align:middle}
       <div class="faltas-tabs" style="margin-bottom:18px">
         <div class="ftab active" id="altab-datos" onclick="switchAlTab('datos')">📋 Datos</div>
         <div class="ftab" id="altab-obs" onclick="switchAlTab('obs')">🗒️ Observaciones de tutoría</div>
+        <div class="ftab" id="altab-email" onclick="switchAlTab('email')">📧 Avisos enviados</div>
         <div class="ftab" id="altab-docs" onclick="switchAlTab('docs')">📎 Justificantes</div>
         <div class="ftab" id="altab-exp" onclick="switchAlTab('exp')">🗂️ Expediente</div>
         <div class="ftab" id="altab-cert" onclick="switchAlTab('cert')">📄 Certificados</div>
@@ -1576,11 +1578,13 @@ tbody td{padding:10px 16px;color:var(--tx);vertical-align:middle}
         </div>
         <div class="fg-row">
           <div class="fg"><label>N.º Seguridad Social <span style="font-weight:400;color:var(--tx3)">(opcional)</span></label><input id="mAlSS" type="text" placeholder="Ej: 28/12345678/00"></div>
+          <div class="fg"><label>Email del alumno/a (opcional)</label><input id="mAlEmailAlumno" type="email" placeholder="alumno@ejemplo.com"></div>
           <div class="fg"><label>Email tutor/a legal <span style="font-weight:400;color:var(--tx3)">(opcional)</span></label><input id="mAlEmail" type="email" placeholder="padre@ejemplo.com"></div>
         </div>
         <div class="fg"><label>Observaciones (aparecen en el boletín)</label><textarea id="mAlObs" rows="3" style="resize:vertical"></textarea></div>
       </div>
 
+      <div id="alvista-email" style="display:none"><div id="alEmailLog"></div></div>
       <!-- TAB OBSERVACIONES DE TUTORÍA (ligadas a evaluación) -->
       <div id="alvista-obs" style="display:none">
         <p style="font-size:12px;color:var(--tx2);margin-bottom:14px">Observaciones que el tutor/a escribe para cada evaluación. Se muestran en el boletín de esa evaluación una vez publicado.</p>
@@ -1882,6 +1886,7 @@ tbody td{padding:10px 16px;color:var(--tx);vertical-align:middle}
 
 
 <script type="module">
+import {renderMailConfig} from './client/mail.js';
 import {db, ref, get, set, update, remove, onValue, serverTimestamp, api, sync, stopSync, downloadFile} from './client/database.js';
 import './client/sanitize.js';
 import {initMigrationReview} from './client/migration.js';
@@ -3081,7 +3086,7 @@ window.saveTramosAll = async () => {
     alert('No se han podido guardar los tramos horarios.\n\nMotivo: ' + (e.message||e) + '\n\nSi el mensaje habla de permisos, hay que revisar las reglas de seguridad de Firebase para permitir escritura en "config/tramos" a dirección.');
   }
 };
-function renderEmailJSConfig() {}
+function renderEmailJSConfig() { renderMailConfig(); }
 window.saveEmailJSConfig=()=>alert('El correo requiere un proveedor configurado en servidor.');
 window.testEmailJS=()=>alert('El correo todavía no está configurado.');
 window.saveConfig=async()=>{
@@ -3718,7 +3723,7 @@ window.exportarAlumnosExcel = () => {
 window.abrirNuevoAlumno=()=>{
   document.getElementById('mAlTitle').textContent='Nuevo alumno';
   document.getElementById('mAlId').value='';
-  ['mAlNom','mAlApe','mAlFecha','mAlObs','mAlExp','mAlEmail','mAlDni','mAlSS','obsTexto'].forEach(f=>document.getElementById(f).value='');
+  ['mAlNom','mAlApe','mAlFecha','mAlObs','mAlExp','mAlEmailAlumno','mAlEmail','mAlDni','mAlSS','obsTexto'].forEach(f=>document.getElementById(f).value='');
   document.getElementById('obsMeta').textContent='';
   switchAlTab('datos');
   populateSelects();openModal('mAlumno');
@@ -3746,6 +3751,7 @@ window.editAlumno=(id)=>{
   document.getElementById('mAlObs').value=a.obs||'';
   document.getElementById('mAlExp').value=a.expediente||'';
   document.getElementById('mAlEmail').value=a.emailTutor||'';
+  document.getElementById('mAlEmailAlumno').value=a.emailAlumno||'';
   document.getElementById('mAlDni').value=a.dni||'';
   document.getElementById('mAlSS').value=a.ss||'';
   switchAlTab('datos');
@@ -3766,6 +3772,7 @@ window.saveAlumno=async()=>{
     obs:document.getElementById('mAlObs').value,
     expediente:document.getElementById('mAlExp').value.trim(),
     emailTutor:document.getElementById('mAlEmail').value.trim(),
+    emailAlumno:document.getElementById('mAlEmailAlumno').value.trim(),
     dni:document.getElementById('mAlDni').value.trim(),
     ss:document.getElementById('mAlSS').value.trim()
   };
@@ -6255,13 +6262,10 @@ async function loadAlumnoEmails(aid) {
   const wrap = document.getElementById('alEmailLog');
   if(!wrap) return;
   const al = DB.alumnos[aid];
-  if(!al?.emailTutor) {
-    wrap.innerHTML = '<div class="alert-banner alert-info">Este alumno no tiene email de tutor legal. Añádelo en la pestaña Datos.</div>';
-    return;
-  }
+  if(!al) return;
   const emails = Object.values(DB.alumnos[aid]?.emails || {}).sort((a,b)=>b.ts-a.ts);
   if(!emails.length) {
-    wrap.innerHTML = `<div class="empty" style="padding:16px">No hay emails enviados.<br><small style="color:var(--tx3)">Email tutor: ${al.emailTutor}</small></div>`;
+    wrap.innerHTML = `<div class="empty" style="padding:16px">No hay emails enviados.<br><small style="color:var(--tx3)">Email tutor: ${al.emailTutor||'sin registrar'}</small></div>`;
     return;
   }
   wrap.innerHTML = emails.slice(0,20).map(e => `
@@ -6271,50 +6275,27 @@ async function loadAlumnoEmails(aid) {
         <div class="dn">${e.asunto||'Aviso de falta'}</div>
         <div class="dm">${e.fecha} · ${e.destino}</div>
       </div>
-      <span class="email-status ${e.ok?'es-sent':'es-err'}">${e.ok?'✓ Enviado':'✗ Error'}</span>
+      <span class="email-status ${e.ok?'es-sent':'es-err'}">${e.ok?'✓ Aceptado por Gmail':e.estado==='unknown'?'⚠ Envío sin confirmar':'✗ Error'}</span>
     </div>`).join('');
 }
 
 // Enviar email de falta (llamado desde setPaseEstado y guardarPaseCompleto)
 // sesKey se usa para no enviar dos veces el mismo aviso por la misma sesión
-async function enviarEmailFalta() {}
+async function enviarEmailFalta(aid, asig, fecha, estado, sesKey) {
+  try {
+    const result=await api('/api/mail/notifications',{method:'POST',body:{kind:'absence',aid,sesKey}});
+    if(!result.ok && !['ya-enviado','no-aplica'].includes(result.motivo)) alert('La asistencia está guardada, pero no se ha enviado el aviso: '+(result.detalle || result.notas?.join('; ') || result.motivo));
+  } catch(error) { alert('La asistencia está guardada, pero no se ha enviado el aviso: '+error.message); }
+}
 
-// Envía el aviso de "tarea próxima a vencer" usando la plantilla EmailJS
-// dedicada a tareas (distinta de la de faltas). Destinatarios: el email de la
-// cuenta de acceso del propio alumno/a (rol "Alumno/a" en Usuarios) y, si es
-// menor de edad, también el email del tutor legal registrado en su ficha.
-// No reenvía el mismo aviso para la misma tarea más de una vez cada 24h.
-// Destinatarios del aviso de tareas de un alumno/a:
-//  · el email de su(s) cuenta(s) de acceso con rol "Alumno/a" vinculadas a él (Usuarios)
-//  · si es menor de edad: el email de tutor legal de su ficha y el de las cuentas
-//    de "Tutor/a legal" vinculadas a él en Usuarios.
-function destinatariosTarea(aid) {
-  const al = DB.alumnos[aid];
-  const lista = [], notas = [];
-  if(!al) return {lista, notas};
-  const cuentas = usuariosArray().filter(u => u.email && (u.alumnosIds||[]).includes(aid));
-  const alumnoCuentas = cuentas.filter(u => hasRole(u,'alumno'));
-  if(!alumnoCuentas.length) notas.push('sin cuenta de alumno/a vinculada en Usuarios');
-  alumnoCuentas.forEach(u => lista.push({email:u.email.trim(), destino:'alumno'}));
-  if(!al.fecha) {
-    notas.push('sin fecha de nacimiento (no se sabe si es menor; no se avisa al tutor legal)');
-  } else if(esAlumnoMenorDeEdad(aid)) {
-    if(al.emailTutor) lista.push({email:al.emailTutor.trim(), destino:'tutor legal'});
-    cuentas.filter(u => hasRole(u,'tutorlegal')).forEach(u => lista.push({email:u.email.trim(), destino:'tutor legal'}));
-    if(!al.emailTutor && !cuentas.some(u => hasRole(u,'tutorlegal'))) notas.push('menor de edad sin email de tutor legal');
-  }
-  const vistos = new Set();
-  const unicos = lista.filter(d => { const k=d.email.toLowerCase(); if(vistos.has(k)) return false; vistos.add(k); return true; });
-  return {lista: unicos, notas};
-}
-// ¿Ya se avisó con éxito de esta tarea a TODOS sus destinatarios actuales?
+// Los destinatarios y los permisos se resuelven siempre en el servidor.
 function tareaYaAvisada(aid, tid) {
-  const {lista} = destinatariosTarea(aid);
-  if(!lista.length) return false;
-  const ok = Object.values(DB.alumnos[aid]?.emails || {}).filter(e => e.sesKey === 'tarea-'+tid && e.ok);
-  return lista.every(d => ok.some(e => String(e.destino||'').toLowerCase().includes(d.email.toLowerCase())));
+  return Object.values(DB.alumnos[aid]?.emails || {}).some(e=>e.sesKey==='tarea-'+tid && e.ok && Date.now()-e.ts<86400000);
 }
-async function enviarEmailTareaPendiente(){return {ok:false,motivo:'correo-no-configurado'};}
+async function enviarEmailTareaPendiente(aid,tid,tarea,forzar=false) {
+  try { return await api('/api/mail/notifications',{method:'POST',body:{kind:'task',aid,tid,force:!!forzar}}); }
+  catch(error) { return {ok:false,motivo:'error-envio',detalle:error.message}; }
+}
 window.enviarAvisosTareasUrgentes = async (btn, forzar) => {
   const list = myAlumnos();
   const hoyMs = new Date().setHours(0,0,0,0);
@@ -6344,7 +6325,7 @@ window.enviarAvisosTareasUrgentes = async (btn, forzar) => {
   registrarAuditoria('Aviso por email', `Avisos de tareas próximas a vencer${forzar?' (reenvío)':''}: ${enviados} enviados, ${saltados} ya enviados, ${sinEmail} sin email, ${errores} con error`);
 };
 
-window.enviarEmailManual=()=>alert('Los avisos por email requieren configurar un proveedor en el servidor.');
+window.enviarEmailManual=()=>alert('Los avisos de faltas se envían desde Pase de lista. Los recordatorios de tareas se envían desde Inicio.');
 
 // ─── DISCIPLINA ───────────────────────────────────────────────────────────────
 function getIncidencias(aid) { return Object.values(DB.disciplina[aid]||{}); }
@@ -7048,9 +7029,9 @@ window.setPaseEstado = async (aid, estado, sesKey, asig, grupo, fecha) => {
   // Actualizar resumen en el footer sin re-renderizar
   actualizarResumenPase();
 
-  // Envío automático de email al tutor legal si el alumno es menor de edad
-  // y se acaba de marcar como Ausente (evitamos reenviar si ya estaba marcado así)
-  if(estado === 'A' && estadoPrevio !== 'A' && esAlumnoMenorDeEdad(aid)) {
+  // El servidor comprueba la edad, los destinatarios y los avisos anteriores.
+  // Solo se solicita cuando se acaba de marcar como Ausente.
+  if(estado === 'A' && estadoPrevio !== 'A') {
     enviarEmailFalta(aid, asig, fecha, estado, sesKey);
   }
 
@@ -7085,7 +7066,7 @@ window.guardarPaseCompleto = async (sesKey, grado, mod) => {
     const estadoPrevio = DB.faltas[al.id]?.sesiones?.[sk] || 'P';
     const estado = estadoPrevio; // el estado ya guardado en memoria localmente (botones), se reescribe igual
     updates['faltas/'+al.id+'/sesiones/'+sk] = estado;
-    if(estado === 'A' && esAlumnoMenorDeEdad(al.id)) aEnviarEmail.push(al.id);
+    if(estado === 'A') aEnviarEmail.push(al.id);
   });
   await update(ref(db,'/'), updates);
   alumnos.forEach(al => recalcHorasFaltadasProf(al.id, m, g));

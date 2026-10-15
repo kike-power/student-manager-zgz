@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { APP_NODES, fail, emailKey, corporateEmail, publicUser, validateUser, dataView, isDirector, pathParts, at, put, mutationUpdates, changedLeaves, assertWrite, validateAcademicChanges } from './policy.js';
 import { prepareFiles, assertFileReferences, authorizedFile } from './files.js';
+import { mountMailRoutes } from './mail.js';
 
 const directory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
 export function resolveUser(root, claims) {
@@ -20,7 +21,7 @@ function audit(root, user, action, detail) {
   root.app.auditoria ||= {};
   root.app.auditoria[randomUUID()] = {ts:Date.now(), userId:user.id, userNombre:user.nombre, tipo:action, detalle:detail};
 }
-export function createApp({ store, fileStore, verifyIdentity, origin, production = true }) {
+export function createApp({ store, fileStore, mail, verifyIdentity, origin, production = true }) {
   if (!origin || (production && new URL(origin).protocol !== 'https:')) throw new Error('PUBLIC_ORIGIN debe ser una URL HTTPS en producción.');
   const app = express();
   app.disable('x-powered-by');
@@ -50,6 +51,7 @@ export function createApp({ store, fileStore, verifyIdentity, origin, production
     } catch(error) { next(error); }
   });
   app.use('/api', express.json({limit:'12mb'}));
+  mountMailRoutes({app,store,mail,verifyIdentity,resolveUser});
   const transaction = async(req, action) => store.transaction(root => {
     const user = resolveUser(root, req.identity);
     return action(root, user);
