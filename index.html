@@ -75,6 +75,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);font-
 .tlic{width:30px;height:30px;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center}
 .tlogo span{font-family:'DM Serif Display',serif;font-size:16px}
 .tsep{flex:1}
+.btn.settings-btn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:7px;flex-shrink:0}
+.settings-btn svg{width:18px;height:18px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.settings-btn[aria-pressed="true"]{color:var(--ac);border-color:var(--ac)}
+.settings-btn:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
 .sync-dot{width:8px;height:8px;border-radius:50%;background:#ccc;transition:background .3s;margin-right:4px}
 .sync-dot.ok{background:var(--su)}.sync-dot.sync{background:var(--wa);animation:pulse 1s infinite}
 .sync-dot.err{background:var(--da)}
@@ -370,6 +374,9 @@ tbody td{padding:10px 16px;color:var(--tx);vertical-align:middle}
 @media (max-width:860px){
   .hamburger-btn{display:inline-flex}
   .topbar{padding:0 12px;gap:8px}
+  .topbar .global-search{flex:1;min-width:0}
+  .topbar #globalSearch{max-width:100%;box-sizing:border-box}
+  .topbar>button{flex-shrink:0}
   .topbar #topSchoolName{display:none}
   .topbar>div[title="Estado sincronización"]{display:none}
   .upill{padding:4px 8px}
@@ -609,12 +616,13 @@ tbody td{padding:10px 16px;color:var(--tx);vertical-align:middle}
       <div class="sync-dot" id="syncDot"></div><span id="syncTxt">Conectado</span>
     </div>
     <div class="upill"><div class="uav" id="topAv"></div><span id="topName"></span><span class="rbadge" id="topRole"></span></div>
-    <div style="position:relative">
+    <div class="global-search" style="position:relative">
       <input type="text" id="globalSearch" placeholder="🔍 Buscar alumno…" autocomplete="off"
         style="padding:7px 10px;border:1px solid var(--bor2);border-radius:var(--r);background:var(--sur2);color:var(--tx);font-family:'DM Sans',sans-serif;font-size:12px;width:170px;outline:none"
         oninput="globalSearchInput(this.value)" onkeydown="if(event.key==='Escape'){this.value='';globalSearchInput('')}">
       <div id="globalSearchResults" style="display:none;position:absolute;top:36px;right:0;width:260px;max-height:320px;overflow-y:auto;background:var(--sur);border:1px solid var(--bor);border-radius:var(--r);box-shadow:var(--shl);z-index:150"></div>
     </div>
+    <button class="btn settings-btn" id="settingsButton" onclick="showPage('config')" title="Configuración" aria-label="Configuración" aria-controls="page-config" aria-pressed="false" style="display:none"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
     <button class="btn btn-sm" id="themeToggleBtn" onclick="toggleTheme()" title="Cambiar tema claro/oscuro">🌙</button>
     <button class="btn btn-sm" onclick="doLogout()">Salir</button>
   </div>
@@ -664,12 +672,13 @@ tbody td{padding:10px 16px;color:var(--tx);vertical-align:middle}
       </div>
 
       <div class="page" id="page-config">
-        <div class="phead"><div><h2>Configuración del centro</h2><p>Grados, módulos y asignaciones — cambios en tiempo real para todos</p></div></div>
+        <div class="phead"><div><h2>Configuración del centro</h2><p>Centro, usuarios y preferencias de la aplicación</p></div></div>
         <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap">
           <div class="ftab active" id="cftab-general" onclick="switchConfigTab('general')">🏫 General</div>
           <div class="ftab" id="cftab-horario" onclick="switchConfigTab('horario')">🕐 Horarios y evaluación</div>
           <div class="ftab" id="cftab-asignacion" onclick="switchConfigTab('asignacion')">📋 Asignación</div>
 
+          <div class="ftab" id="cftab-usuarios" onclick="switchConfigTab('usuarios')">👥 Usuarios</div>
           <div class="ftab" id="cftab-emailjs" onclick="switchConfigTab('emailjs')">📧 Correo</div>
           <div class="ftab" id="cftab-seguridad" onclick="switchConfigTab('seguridad')">🛡️ Seguridad</div>
           <div class="ftab" id="cftab-auditoria" onclick="switchConfigTab('auditoria')">🧾 Auditoría</div>
@@ -689,6 +698,18 @@ tbody td{padding:10px 16px;color:var(--tx);vertical-align:middle}
             <div style="overflow-x:auto"><div id="asigAssignWrap" style="padding:16px"></div></div>
           </div>
         </div>
+
+      <div id="conftab-usuarios" style="display:none">
+        <div class="phead">
+          <div><h3>Usuarios</h3><p>Gestión de profesores, tutores y directivos</p></div>
+          <button class="btn btn-p" onclick="openModal('mUsuario')">+ Nuevo usuario</button>
+        </div>
+        <div class="card"><div class="card-body" style="overflow-x:auto">
+          <table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Grados / Módulos</th><th></th></tr></thead>
+          <tbody id="tbUsuarios"></tbody></table>
+        </div></div>
+      </div>
+
 
         <div id="conftab-emailjs" style="display:none">
           <div class="card" style="padding:18px"><h3>📧 Envío de avisos</h3><div id="mailConfig"></div></div>
@@ -1190,17 +1211,6 @@ tbody td{padding:10px 16px;color:var(--tx);vertical-align:middle}
           </div>
           <div id="guardiaAusenciasWrap"></div>
         </div>
-      </div>
-
-      <div class="page" id="page-usuarios">
-        <div class="phead">
-          <div><h2>Usuarios</h2><p>Gestión de profesores, tutores y directivos</p></div>
-          <button class="btn btn-p" onclick="openModal('mUsuario')">+ Nuevo usuario</button>
-        </div>
-        <div class="card"><div class="card-body">
-          <table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Grados / Módulos</th><th></th></tr></thead>
-          <tbody id="tbUsuarios"></tbody></table>
-        </div></div>
       </div>
 
       <div class="page" id="page-egresados">
@@ -2559,7 +2569,8 @@ function contarAvisosNuevos() {
 }
 function buildSidebar(){
   const sb=document.getElementById('sidebar');
-  const items = isSelfService(cu) ? NAVS.filter(n=>n.guardianOk) : NAVS;
+  document.getElementById('settingsButton').style.display=canAccess('config')?'':'none';
+  const items = (isSelfService(cu) ? NAVS.filter(n=>n.guardianOk) : NAVS).filter(n=>!['config','usuarios'].includes(n.id));
   const nuevosAvisos = contarAvisosNuevos();
   sb.innerHTML='<div class="ssec">Menú</div>'+items.map(it=>{
     const locked=!canAccess(it.id);
@@ -2569,6 +2580,8 @@ function buildSidebar(){
 }
 window.showPage=function(id){
   if(!canAccess(id))return;
+  if(id==='usuarios'){showPage('config');switchConfigTab('usuarios');return;}
+  document.getElementById('settingsButton').setAttribute('aria-pressed',String(id==='config'));
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nitem').forEach(n=>n.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
@@ -3043,6 +3056,7 @@ function renderConfig(){
   renderBackupAviso();
   renderAuditoria();
   renderEmailJSConfig();
+  switchConfigTab(configTabActual);
 }
 let tramosEditando = null;
 function renderTramosCard(){
@@ -3793,12 +3807,14 @@ window.delAlumno=async(id)=>{
 let matTabActual='alumnos';
 let configTabActual = 'general';
 window.switchConfigTab = (tab) => {
+  if(!canAccess('config'))return;
   configTabActual = tab;
-  ['general','horario','asignacion','emailjs','seguridad','auditoria'].forEach(t=>{
+  ['general','horario','asignacion','usuarios','emailjs','seguridad','auditoria'].forEach(t=>{
     document.getElementById('cftab-'+t)?.classList.toggle('active', t===tab);
     const panel = document.getElementById('conftab-'+t);
     if(panel) panel.style.display = t===tab ? '' : 'none';
   });
+  if(tab==='usuarios')renderUsuarios();
 };
 window.switchMatTab = (tab) => {
   matTabActual = tab;
