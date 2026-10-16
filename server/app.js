@@ -1,4 +1,5 @@
 import express from 'express';
+import {enroll} from './enrollment.js';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { randomUUID } from 'node:crypto';
@@ -116,6 +117,10 @@ export function createApp({ store, fileStore, mail, portalAuth, portalUrl, verif
   app.get('/api/migration/quarantine', (req,res) => {
     if(!isDirector(req.user)) fail(403,'Solo dirección puede revisar la migración.');
     res.json({data:req.root.migrationQuarantine || {},migration:req.root.migration || {}});
+  });
+  app.post('/api/students',async(req,res)=>{
+    let user;await transaction(req,(root,actor)=>{user=enroll(root,actor,req.body);return root;});
+    res.json({user:publicUser(user)});
   });
   app.post('/api/users', async(req,res) => {
     const id = req.body?.id || 'u'+randomUUID();

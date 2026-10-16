@@ -1599,8 +1599,15 @@ tbody td{padding:10px 16px;color:var(--tx);vertical-align:middle}
         </div>
         <div class="fg-row">
           <div class="fg"><label>N.º Seguridad Social <span style="font-weight:400;color:var(--tx3)">(opcional)</span></label><input id="mAlSS" type="text" placeholder="Ej: 28/12345678/00"></div>
-          <div class="fg"><label>Email del alumno/a (opcional)</label><input id="mAlEmailAlumno" type="email" placeholder="alumno@ejemplo.com"></div>
-          <div class="fg"><label>Email tutor/a legal <span style="font-weight:400;color:var(--tx3)">(opcional)</span></label><input id="mAlEmail" type="email" placeholder="padre@ejemplo.com"></div>
+          <div class="fg"><label>Email del alumno/a</label><input id="mAlEmailAlumno" type="email" placeholder="alumno@ejemplo.com"></div>
+          <div class="fg"><label>Email tutor/a legal</label><input id="mAlEmail" type="email" placeholder="padre@ejemplo.com"></div>
+        </div>
+        <div id="mAlAccess" style="border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:14px">
+          <h4 style="margin:0 0 10px">Acceso al portal</h4>
+          <div class="fg"><label for="mAlAccessRole">¿Quién tendrá acceso?</label><select id="mAlAccessRole" onchange="updAlumnoAccess()"><option value="alumno">Alumno</option><option value="tutorlegal">Tutor legal (Familia)</option></select></div>
+          <div class="fg" id="mAlAccessNameWrap" style="display:none"><label for="mAlAccessName">Nombre completo del tutor legal</label><input id="mAlAccessName" type="text"></div>
+          <p id="mAlAccessHelp" style="font-size:12px;color:var(--tx2)"></p>
+          <p style="font-size:12px;color:var(--tx2)">Al guardar se creará el acceso de consulta vinculado a este alumno. Admite cualquier dominio. Entrará al portal solicitando un código por correo.</p>
         </div>
         <div class="fg"><label>Observaciones (aparecen en el boletín)</label><textarea id="mAlObs" rows="3" style="resize:vertical"></textarea></div>
       </div>
@@ -1663,7 +1670,7 @@ tbody td{padding:10px 16px;color:var(--tx);vertical-align:middle}
       </div>
 
     </div>
-    <div class="mfoot"><button class="btn" onclick="closeModal('mAlumno')">Cancelar</button><button class="btn btn-p" onclick="saveAlumno()">Guardar</button></div>
+    <div class="mfoot"><button class="btn" onclick="closeModal('mAlumno')">Cancelar</button><button class="btn btn-p" id="saveAlumnoButton" onclick="saveAlumno()">Guardar</button></div>
   </div>
 </div>
 
@@ -3700,7 +3707,7 @@ window.renderAlumnos = function renderAlumnos(){
   const q=(document.getElementById('searchAl').value||'').toLowerCase();
   const g=document.getElementById('filterGrado').value;
   const canEdit=isDirector(cu)||isTutor(cu);
-  document.getElementById('btnNuevoAl').style.display=canEdit?'':'none';
+  document.getElementById('btnNuevoAl').style.display=isDirector(cu)?'':'none';
   // Banner filtro activo
   const banner=document.getElementById('filtroActivoBanner');
   if(banner){
@@ -3748,7 +3755,16 @@ window.exportarAlumnosExcel = () => {
   XLSX.writeFile(wb, `alumnado${g?'_'+g:''}.xlsx`);
   registrarAuditoria('Exportación', `Exportado listado de alumnado a Excel (${rows.length} alumnos${g?', grado '+g:''})`);
 };
+window.updAlumnoAccess=()=>{
+  const family=document.getElementById('mAlAccessRole').value==='tutorlegal';
+  document.getElementById('mAlAccessNameWrap').style.display=family?'':'none';
+  document.getElementById('mAlAccessHelp').textContent=family?'Se usará el email del tutor legal. Si ya tiene una cuenta de familia activa, se añadirá este alumno a su acceso.':'Se usará el email del alumno. Es obligatorio para crear su acceso.';
+};
 window.abrirNuevoAlumno=()=>{
+  document.getElementById('mAlAccess').style.display='';
+  document.getElementById('mAlAccessRole').value='alumno';
+  document.getElementById('mAlAccessName').value='';
+  updAlumnoAccess();
   document.getElementById('mAlTitle').textContent='Nuevo alumno';
   document.getElementById('mAlId').value='';
   ['mAlNom','mAlApe','mAlFecha','mAlObs','mAlExp','mAlEmailAlumno','mAlEmail','mAlDni','mAlSS','obsTexto'].forEach(f=>document.getElementById(f).value='');
@@ -3757,6 +3773,7 @@ window.abrirNuevoAlumno=()=>{
   populateSelects();openModal('mAlumno');
 };
 window.editAlumno=(id)=>{
+  document.getElementById('mAlAccess').style.display='none';
   const a=DB.alumnos[id];if(!a)return;
   document.getElementById('mAlTitle').textContent='Editar alumno';
   document.getElementById('mAlId').value=id;
@@ -3804,13 +3821,17 @@ window.saveAlumno=async()=>{
     dni:document.getElementById('mAlDni').value.trim(),
     ss:document.getElementById('mAlSS').value.trim()
   };
-  await fbUpdate('alumnos/'+id,alumno);
-  if(!existingId){
-    const faltasInit={};
-    MESES.forEach(({m,d})=>{faltasInit[m]={};for(let i=1;i<=d;i++)faltasInit[m][i]='P';});
-    await fbSet('faltas/'+id,faltasInit);
-  }
-  closeModal('mAlumno');
+  const button=document.getElementById('saveAlumnoButton');if(button.disabled)return;button.disabled=true;
+  try{
+    if(existingId)await fbUpdate('alumnos/'+id,alumno);
+    else {
+      const accessRole=document.getElementById('mAlAccessRole').value;
+      await api('/api/students',{method:'POST',body:{alumno,accessRole,accessName:document.getElementById('mAlAccessName').value.trim()}});
+      await sync();
+    }
+    closeModal('mAlumno');
+  }catch(error){alert(error.message||'No se ha podido guardar el alumno y su acceso.');}
+  finally{button.disabled=false;}
 };
 window.delAlumno=async(id)=>{
   if(!confirm('¿Eliminar este alumno?'))return;

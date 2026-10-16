@@ -21,6 +21,14 @@ El gestor permite altas, cambios de rol, activar y desactivar. Las bajas son ló
 conservan las referencias académicas y cortan las siguientes peticiones de sesiones
 abiertas. Debe quedar al menos un administrador activo. No hay contraseñas propias ni registro público.
 
+Al crear un alumno en **Alumnos → Nuevo alumno**, dirección elige quién tendrá acceso:
+**Alumno** (usa el email del alumno) o **Tutor legal (Familia)** (usa el email y nombre
+del tutor legal). Se guardan la ficha y el acceso en una sola transacción. Una familia
+activa ya existente se reutiliza para vincular hermanos; un correo de empleado, de otro
+alumno o de una familia desactivada produce un error sin crear una ficha parcial.
+Los cambios posteriores de acceso siguen gestionándose desde Configuración → Usuarios.
+No se envía un correo automáticamente al dar de alta.
+
 Alumnos y familias usan un [portal separado](https://student-manager-portal-271453855324.europe-west1.run.app/)
 con cualquier dominio de correo. Dirección crea el perfil en **Configuración → Usuarios**,
 elige **Alumno** (un alumno vinculado) o **Tutor legal (Familia)** (uno o varios).
