@@ -2271,8 +2271,9 @@ function fechaLimiteMs(fecha){
   return new Date(+m[1], +m[2]-1, +m[3], 23, 59, 59, 999).getTime();
 }
 function tareaVencida(t){
-  const ms = fechaLimiteMs(t && t.fecha);
-  return ms !== null && Date.now() > ms;
+  if(!t?.fecha)return false;
+  const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Madrid',year:'numeric',month:'2-digit',day:'2-digit'}).format(Date.now());
+  return !/^\d{4}-\d{2}-\d{2}$/.test(t.fecha) || today>t.fecha;
 }
 let _fechaLimiteBackfillHecho = false;
 async function backfillFechaLimite(){
@@ -4357,7 +4358,7 @@ window.renderTareas = function renderTareas(){
   const btnLF=document.getElementById('btnLimpiarFiltroTareas');
   if(btnLF) btnLF.style.display=(fDesde||fHasta)?'':'none';
   const soloLectura = isSelfService(cu);
-  const puedeSubirPropio = false; // solo el propio alumno sube su entrega, no el tutor legal
+  const puedeSubirPropio = isPureAlumno(cu) && (cu.alumnosIds||[]).includes(aid);
   document.getElementById('tbTareas').innerHTML=list.length?list.map(t=>{
     const matProf = t.archivoProf ? `<button class="btn btn-sm btn-ic" onclick="verArchivoTarea('${aid}','${t.id}','archivoProf')" title="${t.archivoProf.nombre}">⬇ Descargar</button>${soloLectura?'':`<button class="btn btn-sm btn-ic btn-d" onclick="borrarArchivoTarea('${aid}','${t.id}','archivoProf')">🗑</button>`}` : '<span style="color:var(--tx3);font-size:12px">—</span>';
     let matAlumno;
@@ -4427,6 +4428,11 @@ window.borrarArchivoTarea = async (aid, tid, campo) => {
   const t = DB.tareas?.[aid]?.[tid];
   if(campo==='archivoAlumno' && isPureAlumno(cu) && tareaVencida(t)) { alert('La fecha de entrega ha vencido: ya no puedes modificar tu entrega.'); renderTareas(); return; }
   if(!confirm('¿Eliminar este archivo?')) return;
+  if(isPureAlumno(cu)){
+    if(campo!=='archivoAlumno')return;
+    try{await api('/api/submissions',{method:'POST',body:{alumnoId:aid,tareaId:tid,action:'delete'}});await sync();renderTareas();}catch(error){alert(error.message);}
+    return;
+  }
   await fbRemove(`tareas/${aid}/${tid}/${campo}`);
   // Si la tarea se había marcado "Entregada" automáticamente al subir este archivo,
   // al borrarlo vuelve a "Pendiente" (una marca puesta a mano por el profesorado no se toca).
@@ -4451,22 +4457,8 @@ window.subirEntregaAlumno = (aid, tid) => {
     if(tareaVencida(DB.tareas?.[aid]?.[tid])) { alert('La fecha de entrega de esta tarea ha vencido: ya no se admiten entregas.'); renderTareas(); return; }
     try {
       const dataUrl = await leerArchivoComoDataURL(file);
-      await fbSet(`tareas/${aid}/${tid}/archivoAlumno`, {
-        nombre: file.name,
-        data: dataUrl,
-        fecha: new Date().toLocaleDateString('es-ES'),
-        size: file.size,
-        ts: serverTimestamp() // hora del servidor: las reglas de Firebase la comparan con fechaLimite
-      });
-      // Al subir la entrega, la tarea pasa automáticamente a "Entregada"
-      try {
-        await fbUpdate(`tareas/${aid}/${tid}`, { estado:'Entregada', entregaAuto:true, entregaFecha:new Date().toISOString() });
-        const tt = DB.tareas?.[aid]?.[tid];
-        registrarAuditoria('Tarea', `${cu?.nombre||'Alumno/a'} ha entregado la tarea "${tt?.desc||tid}" (${file.name})`);
-      } catch(e2) {
-        console.error('No se ha podido marcar la tarea como entregada:', e2);
-        alert('El archivo se ha subido, pero no se ha podido marcar la tarea como "Entregada". Avisa a tu profesor/a.');
-      }
+      await api('/api/submissions',{method:'POST',body:{alumnoId:aid,tareaId:tid,action:'upload',file:{nombre:file.name,data:dataUrl}}});
+      await sync();
       renderTareas();
     } catch(e) {
       const denegado = /permission_denied|permission denied/i.test(e.message||'');

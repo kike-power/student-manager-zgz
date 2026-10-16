@@ -36,10 +36,15 @@ El acceso requiere un código de ocho cifras enviado al correo autorizado: caduc
 minutos, admite cinco intentos y solo puede usarse una vez. La sesión dura ocho horas;
 desactivar el usuario o cambiar su correo corta el acceso en la siguiente petición.
 
-Ambos perfiles son de consulta: tablón público, asistencia, tareas, justificantes y boletín
+Las familias tienen acceso de consulta. El alumno puede además subir, sustituir o retirar
+su propio archivo de entrega (máximo 5 MiB) en tareas con plazo abierto; al subirlo se
+marca Entregada y al retirarlo vuelve a Pendiente si ese estado fue automático. Se respeta
+el final del día indicado por el profesor en la zona Europe/Madrid; sin fecha no hay cierre.
+La autorización y el plazo se comprueban de nuevo en la transacción final. El resto es consulta: tablón público, asistencia, tareas, justificantes y boletín
 de los alumnos vinculados. Las notas solo se muestran desde la fecha de publicación
 configurada. El servidor excluye otros alumnos, contactos privados, disciplina, auditoría
-y administración, y deniega todas las escrituras. Los perfiles históricos apartados
+y administración. Se deniegan las escrituras generales; la única excepción externa es
+`POST /api/submissions` para el archivo propio del alumno, sin editar notas ni enunciados. Los perfiles históricos apartados
 durante la migración siguen sin acceso; deben darse de alta expresamente.
 
 La interfaz actualiza datos cada 15 segundos y después de cada escritura. La aplicación
@@ -140,7 +145,8 @@ El servicio de empleados conserva IAP y su política de invocación.
 Su cuenta de servicio exclusiva tiene acceso a la base dedicada, lectura de adjuntos y
 lectura de los secretos de correo y `student-manager-portal-auth`. Este último se inyecta
 como `PORTAL_AUTH_SECRET`: mínimo 32 bytes aleatorios, nunca en Git. El portal no tiene
-permiso para añadir versiones de secretos ni subir adjuntos. Configurar `PORTAL_URL` en
+permiso para añadir versiones de secretos. Puede crear objetos privados de entregas
+en el bucket de adjuntos, con lectura y sin sobrescribir ni borrar objetos existentes. Configurar `PORTAL_URL` en
 el servicio de empleados para enlazar el portal, y el origen HTTPS exacto en cada servicio.
 
 Los códigos y sesiones se guardan como hashes en nodos privados; hay límites por IP,

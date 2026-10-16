@@ -1,5 +1,6 @@
 import express from 'express';
 import {enroll} from './enrollment.js';
+import {mountSubmissions} from './submissions.js';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { randomUUID } from 'node:crypto';
@@ -54,7 +55,7 @@ export function createApp({ store, fileStore, mail, portalAuth, portalUrl, verif
       req.identity.email = portalAuth ? normalizeEmail(req.identity.email) : corporateEmail(req.identity.email);
       if (!req.identity.sub) fail(401,'Identidad no válida.');
       req.user = resolveUser(req.root,req.identity);
-      if(portalAuth&&(!isSelfService(req.user)||!['GET','HEAD'].includes(req.method)||!['/session','/database','/files'].includes(req.path)))fail(403,'Este portal solo permite consultar la información de tus alumnos vinculados.');
+      if(portalAuth&&(!isSelfService(req.user)||!((['GET','HEAD'].includes(req.method)&&['/session','/database','/files'].includes(req.path))||(req.method==='POST'&&req.path==='/submissions'&&req.user.roles.length===1&&req.user.roles[0]==='alumno'))))fail(403,'Este portal solo permite consultar la información de tus alumnos vinculados.');
       next();
     } catch(error) { next(error); }
   });
@@ -64,6 +65,7 @@ export function createApp({ store, fileStore, mail, portalAuth, portalUrl, verif
     const user = resolveUser(root, req.identity);
     return action(root, user);
   });
+  if(portalAuth)mountSubmissions({app,transaction,fileStore});
   app.get('/api/session', async(req,res) => {
     // Bind the invitation email to Google's immutable subject on its first use.
     if (req.identity.provider!=='email'&&!req.user.googleSub) await transaction(req,(root,user) => {user.googleSub=req.identity.sub; audit(root,user,'Acceso','Primer acceso Google SSO'); return root;});
