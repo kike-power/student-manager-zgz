@@ -5,23 +5,26 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
-import { APP_NODES, fail, emailKey, corporateEmail, publicUser, validateUser, dataView, isDirector, pathParts, at, put, mutationUpdates, changedLeaves, assertWrite, validateAcademicChanges } from './policy.js';
+import { APP_NODES, fail, emailKey, corporateEmail, normalizeEmail, isSelfService, ROLES, publicUser, validateUser, dataView, isDirector, pathParts, at, put, mutationUpdates, changedLeaves, assertWrite, validateAcademicChanges } from './policy.js';
 import { prepareFiles, assertFileReferences, authorizedFile } from './files.js';
+import { mountPortalAuth } from './portal-auth.js';
 import { mountMailRoutes } from './mail.js';
 
 const directory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
 export function resolveUser(root, claims) {
   const id = root.access?.[emailKey(claims.email)];
   const user = root.app?.usuarios?.[id];
-  if (!user || user.activo !== true || user.email !== claims.email || !user.roles?.length || user.roles.some(r => !['director','tutor','profesor'].includes(r))) fail(403, 'Tu cuenta no tiene acceso activo. Contacta con un administrador.');
-  if (user.googleSub && user.googleSub !== claims.sub) fail(403,'Esta cuenta de Google no coincide con el usuario autorizado.');
+  if (!user || user.activo !== true || user.email !== claims.email || !user.roles?.length || user.roles.some(r => !ROLES.includes(r))) fail(403, 'Tu cuenta no tiene acceso activo. Contacta con un administrador.');
+  if(claims.provider==='email'&&!isSelfService(user))fail(403,'El acceso de empleados requiere Google SSO.');
+  if(claims.provider!=='email'&&isSelfService(user))fail(403,'Usa el portal de alumnos y familias para esta cuenta.');
+  if(claims.provider!=='email' && user.googleSub && user.googleSub !== claims.sub) fail(403,'Esta cuenta de Google no coincide con el usuario autorizado.');
   return user;
 }
 function audit(root, user, action, detail) {
   root.app.auditoria ||= {};
   root.app.auditoria[randomUUID()] = {ts:Date.now(), userId:user.id, userNombre:user.nombre, tipo:action, detalle:detail};
 }
-export function createApp({ store, fileStore, mail, verifyIdentity, origin, production = true }) {
+export function createApp({ store, fileStore, mail, portalAuth, portalUrl, verifyIdentity, origin, production = true }) {
   if (!origin || (production && new URL(origin).protocol !== 'https:')) throw new Error('PUBLIC_ORIGIN debe ser una URL HTTPS en producción.');
   const app = express();
   app.disable('x-powered-by');
@@ -36,29 +39,33 @@ export function createApp({ store, fileStore, mail, verifyIdentity, origin, prod
     } }
   }));
   app.use((req,res,next) => {res.set('Cache-Control','no-store'); next();});
+  app.get('/auth-config',(_req,res)=>res.json({mode:portalAuth?'portal':'google',portalUrl:portalUrl||''}));
+  if(portalAuth)mountPortalAuth({app,portalAuth,store,origin,production});
   app.get('/healthz', (_req,res) => res.json({ok:true}));
   app.use('/api', rateLimit({windowMs:60000, limit:150, standardHeaders:'draft-8',legacyHeaders:false}));
   app.use('/api', async(req,res,next) => {
     try {
       // Custom header + exact origin excludes cross-site form and fetch mutations.
       if (!['GET','HEAD'].includes(req.method) && (req.get('origin') !== origin || req.get('x-requested-with') !== 'student-manager')) fail(403,'Origen de petición no permitido.');
-      req.identity = await verifyIdentity(req);
-      req.identity.email = corporateEmail(req.identity.email);
+      if(!portalAuth)req.identity=await verifyIdentity(req);
+      req.root=await store.read();
+      if(portalAuth)req.identity=portalAuth.identity(req,req.root);
+      req.identity.email = portalAuth ? normalizeEmail(req.identity.email) : corporateEmail(req.identity.email);
       if (!req.identity.sub) fail(401,'Identidad no válida.');
-      req.root = await store.read();
       req.user = resolveUser(req.root,req.identity);
+      if(portalAuth&&(!isSelfService(req.user)||!['GET','HEAD'].includes(req.method)||!['/session','/database','/files'].includes(req.path)))fail(403,'Este portal solo permite consultar la información de tus alumnos vinculados.');
       next();
     } catch(error) { next(error); }
   });
   app.use('/api', express.json({limit:'12mb'}));
-  mountMailRoutes({app,store,mail,verifyIdentity,resolveUser});
+  if(!portalAuth)mountMailRoutes({app,store,mail,verifyIdentity,resolveUser});
   const transaction = async(req, action) => store.transaction(root => {
     const user = resolveUser(root, req.identity);
     return action(root, user);
   });
   app.get('/api/session', async(req,res) => {
     // Bind the invitation email to Google's immutable subject on its first use.
-    if (!req.user.googleSub) await transaction(req,(root,user) => {user.googleSub=req.identity.sub; audit(root,user,'Acceso','Primer acceso Google SSO'); return root;});
+    if (req.identity.provider!=='email'&&!req.user.googleSub) await transaction(req,(root,user) => {user.googleSub=req.identity.sub; audit(root,user,'Acceso','Primer acceso Google SSO'); return root;});
     res.json({user:publicUser(req.user), domains:['thepower.education','ext.thepower.education','prometeo-fp.com']});
   });
   app.get('/api/database', (req,res) => {
@@ -117,13 +124,14 @@ export function createApp({ store, fileStore, mail, verifyIdentity, origin, prod
     const input = validateUser(userInput,id);
     await transaction(req,(root,actor) => {
       if (!isDirector(actor)) fail(403,'Solo dirección puede gestionar usuarios.');
+      if(isSelfService(input)&&input.alumnosIds.some(aid=>!Object.hasOwn(root.app.alumnos||{},aid)))fail(400,'Algún alumno vinculado no existe.');
       const users=root.app.usuarios ||= {}, existing=users[id];
       const duplicate=Object.values(users).find(u => u.email===input.email && u.id!==id);
       if (duplicate) fail(409,'Ese email ya está registrado.');
       if (existing && isDirector(existing) && existing.activo && (!input.activo || !isDirector(input)) && !Object.values(users).some(u => u.id!==id && u.activo && isDirector(u))) fail(409,'Debe quedar al menos un administrador activo.');
       root.access ||= {};
       if (existing) delete root.access[emailKey(existing.email)];
-      users[id] = {...input, ...(existing?.googleSub ? {googleSub:existing.googleSub} : {})};
+      users[id] = {...input, ...(existing?.googleSub&&existing.email===input.email&&!isSelfService(input) ? {googleSub:existing.googleSub} : {})};
       root.access[emailKey(input.email)] = id;
       audit(root,actor,'Usuario',`${existing ? 'Actualizado' : 'Creado'} ${id}: ${input.email}; activo=${input.activo}; roles=${input.roles.join(',')}`);
       return root;

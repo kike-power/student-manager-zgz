@@ -1,7 +1,9 @@
+import {selfServiceView} from './self-service-view.js';
+import { domainToASCII } from 'node:url';
 import { createHash } from 'node:crypto';
 
 export const DOMAINS = Object.freeze(['thepower.education', 'ext.thepower.education', 'prometeo-fp.com']);
-export const ROLES = Object.freeze(['director', 'tutor', 'profesor']);
+export const ROLES = Object.freeze(['director', 'tutor', 'profesor', 'alumno', 'tutorlegal']);
 export const APP_NODES = Object.freeze(['config', 'usuarios', 'grupos', 'grupoSiguiente', 'archivoCursos', 'asignaturas', 'asignaciones', 'alumnos', 'faltas', 'tareas', 'notas', 'disciplina', 'empresas', 'fctAsignaciones', 'horario', 'calendario', 'salidas', 'observaciones', 'pendientes', 'matriculas', 'oferta', 'actas', 'moduloCodigos', 'moduloRAs', 'notasRA', 'rubricas', 'autorizaciones', 'historico', 'convalidaciones', 'avisos', 'auditoria', 'guardias']);
 const STUDENT_NODES = ['alumnos', 'faltas', 'tareas', 'notas', 'disciplina', 'observaciones', 'pendientes', 'matriculas', 'notasRA', 'autorizaciones', 'historico', 'convalidaciones'];
 export class HttpError extends Error {
@@ -11,12 +13,20 @@ export const fail = (status, message) => { throw new HttpError(status, message);
 export const emailKey = email => createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
 export const sessionKey = token => createHash('sha256').update(token).digest('hex');
 export const safeKey = str => String(str).replace(/[.#$/\[\]]/g, '_');
+export const isSelfService = user => !!user?.roles?.length && user.roles.every(r=>['alumno','tutorlegal'].includes(r));
 export const isDirector = user => user?.roles?.includes('director') === true;
 
+export function normalizeEmail(value) {
+  if(typeof value!=='string'||value.length>254||/[\r\n\x00-\x20]/.test(value.trim()))fail(400,'Email inválido.');
+  const parts=value.trim().toLowerCase().split('@');
+  if(parts.length!==2)fail(400,'Email inválido.');
+  const domain=domainToASCII(parts[1]);
+  if(!/^[a-z0-9.!#$%&'*+\-/=?^_`{|}~]+$/.test(parts[0])||parts[0].startsWith('.')||parts[0].endsWith('.')||parts[0].includes('..')||!domain||!domain.includes('.')||domain.split('.').some(p=>!p||p.length>63||!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(p)))fail(400,'Email inválido.');
+  return parts[0]+'@'+domain;
+}
 export function corporateEmail(value) {
-  if (typeof value !== 'string') fail(400, 'Email corporativo obligatorio.');
-  const email = value.trim().toLowerCase();
-  if (!/^[a-z0-9.!#$%&'*+\-/=?^_`{|}~]+@[a-z0-9.-]+$/.test(email) || !DOMAINS.includes(email.split('@')[1])) fail(403, 'El dominio del email no está autorizado.');
+  const email=normalizeEmail(value);
+  if(!DOMAINS.includes(email.split('@')[1]))fail(403,'El dominio del email no está autorizado para empleados.');
   return email;
 }
 export function verifyCorporateClaims(claims) {
@@ -40,23 +50,29 @@ export function put(root, parts, value) {
   if (value === null) delete node[parts.at(-1)]; else node[parts.at(-1)] = value;
 }
 export function publicUser(user) {
-  const { id, nombre, email, roles, grupos, materias, activo } = user;
-  return { id, nombre, email, roles, rol: roles?.[0], rolesMap: Object.fromEntries((roles || []).map(r => [r, true])), grupos: grupos || [], materias: materias || [], activo: activo === true };
+  const { id, nombre, email, roles, grupos, materias, alumnosIds, activo } = user;
+  return { id, nombre, email, roles, rol: roles?.[0], rolesMap: Object.fromEntries((roles || []).map(r => [r, true])), grupos: grupos || [], materias: materias || [], alumnosIds: alumnosIds || [], activo: activo === true };
 }
 export function validateUser(body, id) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) fail(400, 'Usuario inválido.');
-  const allowed = ['nombre', 'email', 'roles', 'grupos', 'materias', 'activo'];
+  const allowed = ['nombre', 'email', 'roles', 'grupos', 'materias', 'alumnosIds', 'activo'];
   if (Object.keys(body).some(k => !allowed.includes(k))) fail(400, 'Campo de usuario no permitido.');
-  const email = corporateEmail(body.email);
   if (typeof body.nombre !== 'string' || !body.nombre.trim() || body.nombre.length > 150 || /[<>\x00-\x1f]/.test(body.nombre)) fail(400, 'Nombre inválido.');
-  if (!Array.isArray(body.roles) || !body.roles.length || body.roles.some(r => !ROLES.includes(r))) fail(400, 'Solo se admiten roles de empleados.');
+  if (!Array.isArray(body.roles) || !body.roles.length || body.roles.some(r => !ROLES.includes(r))) fail(400, 'Rol no válido.');
+  const external=body.roles.some(r=>['alumno','tutorlegal'].includes(r));
+  if(external && body.roles.length!==1)fail(400,'Alumno y Tutor legal son perfiles exclusivos, sin roles de empleado.');
+  const email=external?normalizeEmail(body.email):corporateEmail(body.email);
   if (typeof body.activo !== 'boolean') fail(400, 'Indica si el usuario está activo.');
   const list = key => {
     const values = body[key] || [];
     if (!Array.isArray(values) || values.length > 100 || values.some(v => typeof v !== 'string' || v.length > 150 || /[<>\x00-\x1f]/.test(v))) fail(400, 'Asignaciones inválidas.');
     return [...new Set(values)];
   };
-  return { id, nombre: body.nombre.trim(), email, roles: [...new Set(body.roles)], grupos: list('grupos'), materias: list('materias'), activo: body.activo };
+  const alumnosIds=list('alumnosIds');
+  for(const aid of alumnosIds)if(pathParts(aid).length!==1)fail(400,'Vínculo de alumno inválido.');
+  if(external && (!alumnosIds.length||(body.roles.includes('alumno')&&alumnosIds.length!==1)))fail(400,'Vincula una cuenta de alumno a un alumno y una familia a uno o varios alumnos.');
+  if(!external&&alumnosIds.length)fail(400,'Los vínculos de alumnos son para los perfiles Alumno o Tutor legal.');
+  return { id, nombre: body.nombre.trim(), email, roles: [...new Set(body.roles)], grupos: external?[]:list('grupos'), materias: external?[]:list('materias'), alumnosIds, activo: body.activo };
 }
 export function validateData(value, depth = 0) {
   if (depth > 20) fail(400, 'Datos demasiado anidados.');
@@ -104,8 +120,9 @@ export function sessionModule(root, group, key) {
   return [...(root.asignaciones?.[safeKey(group)]?.asignaturas || root.asignaturas || [])].sort((a,b) => b.length-a.length).find(m => tail === safeKey(m) || tail.startsWith(safeKey(m) + '_')) || null;
 }
 export function dataView(user, root) {
+  if(isSelfService(user))return selfServiceView(user,root);
   const out = Object.fromEntries(APP_NODES.filter(n => n in root).map(n => [n, structuredClone(root[n])]));
-  out.usuarios = Object.fromEntries(Object.entries(root.usuarios || {}).map(([id,u]) => [id, isDirector(user) || id === user.id ? publicUser(u) : { id, nombre:u.nombre, roles:u.roles || [], rol:u.roles?.[0], grupos:u.grupos || [], materias:u.materias || [] }]));
+  out.usuarios = Object.fromEntries(Object.entries(root.usuarios || {}).filter(([id,u])=>isDirector(user)||id===user.id||!isSelfService(u)).map(([id,u]) => [id, isDirector(user) || id === user.id ? publicUser(u) : { id, nombre:u.nombre, roles:u.roles || [], rol:u.roles?.[0], grupos:u.grupos || [], materias:u.materias || [] }]));
   if (isDirector(user)) return out;
   const groups = groupsFor(user, root);
   const students = Object.fromEntries(Object.entries(root.alumnos || {}).filter(([,a]) => groups.has(a.grupo)));
@@ -143,6 +160,7 @@ export function dataView(user, root) {
 }
 
 export function assertWrite(user, root, next, parts) {
+  if(isSelfService(user))fail(403,'Este perfil solo tiene acceso de consulta.');
   const [node, aid, p2, p3] = parts;
   if (!APP_NODES.includes(node) || ['usuarios','auditoria'].includes(node)) fail(403, 'Usa la gestión de usuarios o la auditoría del servidor.');
   if (isDirector(user)) return;

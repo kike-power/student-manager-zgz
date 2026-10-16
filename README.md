@@ -19,8 +19,20 @@ en un perfil no concede por sí solo acceso a grupos.
 
 El gestor permite altas, cambios de rol, activar y desactivar. Las bajas son lógicas,
 conservan las referencias académicas y cortan las siguientes peticiones de sesiones
-abiertas. Debe quedar al menos un administrador activo. No hay contraseñas propias,
-cuentas de familia/alumnado ni registro público.
+abiertas. Debe quedar al menos un administrador activo. No hay contraseñas propias ni registro público.
+
+Alumnos y familias usan un [portal separado](https://student-manager-portal-271453855324.europe-west1.run.app/)
+con cualquier dominio de correo. Dirección crea el perfil en **Configuración → Usuarios**,
+elige **Alumno** (un alumno vinculado) o **Tutor legal (Familia)** (uno o varios).
+El acceso requiere un código de ocho cifras enviado al correo autorizado: caduca en diez
+minutos, admite cinco intentos y solo puede usarse una vez. La sesión dura ocho horas;
+desactivar el usuario o cambiar su correo corta el acceso en la siguiente petición.
+
+Ambos perfiles son de consulta: tablón público, asistencia, tareas, justificantes y boletín
+de los alumnos vinculados. Las notas solo se muestran desde la fecha de publicación
+configurada. El servidor excluye otros alumnos, contactos privados, disciplina, auditoría
+y administración, y deniega todas las escrituras. Los perfiles históricos apartados
+durante la migración siguen sin acceso; deben darse de alta expresamente.
 
 La interfaz actualiza datos cada 15 segundos y después de cada escritura. La aplicación
 no guarda páginas ni respuestas autenticadas en el service worker.
@@ -45,12 +57,13 @@ event listeners es una mejora pendiente, no se ha hecho una reescritura completa
 Los tests usan datos ficticios y un almacén en memoria; los de identidad comprueban JWT
 ES256 firmados, audiencia, emisor y caducidad. No sustituyen la prueba real de Google
 Workspace/IAP ni la prueba de persistencia contra la instancia nueva de Realtime Database.
-El servidor de producción nunca permite saltarse IAP ni usa usuarios de demostración.
+El servicio de empleados exige IAP. El portal externo exige una sesión por código de correo;
+ningún servicio de producción admite usuarios de demostración.
 
 ## Configuración
 
 Variables obligatorias: `GOOGLE_CLOUD_PROJECT`, `FIREBASE_DATABASE_URL`, `ATTACHMENTS_BUCKET`,
-`IAP_AUDIENCE` y `PUBLIC_ORIGIN`. Ver `.env.example`. En producción el origen debe ser HTTPS y debe
+`PUBLIC_ORIGIN` y, en el servicio de empleados, `IAP_AUDIENCE`. Ver `.env.example`. En producción el origen debe ser HTTPS y debe
 coincidir con la URL que usa el navegador para permitir escrituras.
 
 La cuenta de servicio de Cloud Run usa credenciales implícitas (ADC); no subir claves
@@ -109,12 +122,30 @@ El archivo de entorno de despliegue debe incluir `NODE_ENV=production` y una aud
 de IAP `/projects/271453855324/locations/europe-west1/services/student-manager-zgz`.
 Configurar el origen canónico después de obtener la URL del servicio.
 
+## Portal externo
+
+El servicio `student-manager-portal` usa la misma imagen con `ACCESS_MODE=portal`, sin IAP,
+con acceso público únicamente a la pantalla de entrada y rutas de autenticación. Las API
+académicas requieren una cookie Secure/HttpOnly y aplican el filtro por alumno en servidor.
+El servicio de empleados conserva IAP y su política de invocación.
+
+Su cuenta de servicio exclusiva tiene acceso a la base dedicada, lectura de adjuntos y
+lectura de los secretos de correo y `student-manager-portal-auth`. Este último se inyecta
+como `PORTAL_AUTH_SECRET`: mínimo 32 bytes aleatorios, nunca en Git. El portal no tiene
+permiso para añadir versiones de secretos ni subir adjuntos. Configurar `PORTAL_URL` en
+el servicio de empleados para enlazar el portal, y el origen HTTPS exacto en cada servicio.
+
+Los códigos y sesiones se guardan como hashes en nodos privados; hay límites por IP,
+correo y presupuesto global de envíos. Solo se envían códigos a cuentas previamente
+autorizadas, con respuesta genérica para evitar revelar si un correo está dado de alta.
+No se envía ninguna invitación automáticamente al crear el usuario.
+
 ## Operación y trabajo pendiente antes de compartir con empleados
 
 - Completar el SSO real con Mar y cuentas de los tres dominios; cuenta personal,
   externa, usuario sin alta y usuario desactivado deben ser rechazados.
 - Crear grupos, módulos y asignaciones, y validar los flujos académicos con sus usuarios.
-- Los avisos usan Gmail API desde el servidor. Falta autorizar el buzón remitente antes de activar los envíos; ver la configuración de correo.
+- Gmail API está autorizado y se confirmó la recepción de una prueba el 16 de octubre de 2026.
 - Los adjuntos se almacenan en Cloud Storage privado, deduplicados por hash del contenido.
   El bucket debe tener acceso uniforme y prevención de acceso público. Otorgar al runtime
   `roles/storage.objectCreator` y `roles/storage.objectViewer` solo en ese bucket: el borrado
