@@ -9,22 +9,31 @@ export function enroll(root,actor,body) {
   if(!alumno||Array.isArray(alumno)||Object.keys(alumno).some(k=>!['id','nombre','apellidos','grupo','fecha','obs','expediente','emailTutor','emailAlumno','dni','ss'].includes(k)))fail(400,'Ficha de alumno inválida.');
   validateData(alumno);
   if(!/^a[a-zA-Z0-9-]{1,80}$/.test(alumno.id||''))fail(400,'ID de alumno inválido.');
-  if(!['alumno','tutorlegal'].includes(accessRole))fail(400,'Elige acceso de Alumno o Tutor legal (Familia).');
+  if(!['alumno','tutorlegal','ambos'].includes(accessRole))fail(400,'Elige acceso de Alumno, Tutor legal (Familia) o Ambos.');
   if(Object.hasOwn(root.app.alumnos||{},alumno.id))fail(409,'Este alumno ya está guardado. Recarga el listado.');
   const next={...root.app,alumnos:{...root.app.alumnos,[alumno.id]:alumno}};
   validateAcademicChanges(root.app,next,{['alumnos/'+alumno.id]:alumno});
-  const input=validateUser({nombre:accessRole==='alumno'?`${alumno.nombre} ${alumno.apellidos}`:accessName,email:accessRole==='alumno'?alumno.emailAlumno:alumno.emailTutor,roles:[accessRole],alumnosIds:[alumno.id],activo:true},'u'+randomUUID());
-  const users=root.app.usuarios||{},existing=Object.values(users).find(u=>u.email===input.email);
-  if(existing){
-    if(accessRole!=='tutorlegal'||existing.roles?.length!==1||existing.roles[0]!=='tutorlegal')fail(409,'Este correo ya tiene una cuenta. Usa otro correo o revisa el perfil en Usuarios.');
-    if(existing.activo!==true)fail(409,'La cuenta de esta familia está desactivada. Revísala en Usuarios antes de vincularla.');
-    input.id=existing.id;input.nombre=existing.nombre;input.alumnosIds=[...new Set([...(existing.alumnosIds||[]),alumno.id])];
-    if(input.alumnosIds.length>100)fail(400,'La familia supera el límite de alumnos vinculados.');
+  const roles=accessRole==='ambos'?['alumno','tutorlegal']:[accessRole];
+  const inputs=roles.map(role=>validateUser({nombre:role==='alumno'?`${alumno.nombre} ${alumno.apellidos}`:accessName,email:role==='alumno'?alumno.emailAlumno:alumno.emailTutor,roles:[role],alumnosIds:[alumno.id],activo:true},'u'+randomUUID()));
+  if(new Set(inputs.map(u=>u.email)).size!==inputs.length)fail(400,'El alumno y el tutor legal deben tener correos diferentes.');
+  const users=root.app.usuarios||{};
+  // Validate every account before changing the record or linking an existing family.
+  for(const input of inputs){
+    const existing=Object.values(users).find(u=>u.email===input.email);
+    if(existing){
+      if(input.roles[0]!=='tutorlegal'||existing.roles?.length!==1||existing.roles[0]!=='tutorlegal')fail(409,'Este correo ya tiene una cuenta. Usa otro correo o revisa el perfil en Usuarios.');
+      if(existing.activo!==true)fail(409,'La cuenta de esta familia está desactivada. Revísala en Usuarios antes de vincularla.');
+      input.id=existing.id;input.nombre=existing.nombre;input.alumnosIds=[...new Set([...(existing.alumnosIds||[]),alumno.id])];
+      if(input.alumnosIds.length>100)fail(400,'La familia supera el límite de alumnos vinculados.');
+    }
   }
   root.app.alumnos=next.alumnos;
   root.app.faltas||={};root.app.faltas[alumno.id]=Object.fromEntries([[9,22],[10,23],[11,21],[12,17],[1,21],[2,20],[3,21],[4,17],[5,22],[6,20]].map(([month,days])=>[month,Object.fromEntries(Array.from({length:days},(_,day)=>[day+1,'P']))]));
-  root.app.usuarios||={};root.app.usuarios[input.id]=input;
-  root.access||={};root.access[emailKey(input.email)]=input.id;
-  root.app.auditoria||={};root.app.auditoria[randomUUID()]={ts:Date.now(),userId:actor.id,userNombre:actor.nombre,tipo:'Alta de alumno y acceso',detalle:`Alumno ${alumno.id}; usuario ${input.id}; rol ${accessRole}; ${existing?'familia vinculada':'cuenta creada'}`};
-  return input;
+  root.app.usuarios||={};root.access||={};root.app.auditoria||={};
+  for(const input of inputs){
+    const linked=Object.hasOwn(users,input.id);
+    root.app.usuarios[input.id]=input;root.access[emailKey(input.email)]=input.id;
+    root.app.auditoria[randomUUID()]={ts:Date.now(),userId:actor.id,userNombre:actor.nombre,tipo:'Alta de alumno y acceso',detalle:`Alumno ${alumno.id}; usuario ${input.id}; rol ${input.roles[0]}; ${linked?'familia vinculada':'cuenta creada'}`};
+  }
+  return inputs[0];
 }

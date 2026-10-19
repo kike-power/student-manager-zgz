@@ -23,7 +23,9 @@ abiertas. Debe quedar al menos un administrador activo. No hay contraseñas prop
 
 Al crear un alumno en **Alumnos → Nuevo alumno**, dirección elige quién tendrá acceso:
 **Alumno** (usa el email del alumno) o **Tutor legal (Familia)** (usa el email y nombre
-del tutor legal). Se guardan la ficha y el acceso en una sola transacción. Una familia
+del tutor legal), o **Ambos: alumno y tutor legal**, que crea dos cuentas independientes
+con correos distintos y requiere ambos correos y el nombre del tutor legal. Se guardan
+la ficha y todos los accesos en una sola transacción. Una familia
 activa ya existente se reutiliza para vincular hermanos; un correo de empleado, de otro
 alumno o de una familia desactivada produce un error sin crear una ficha parcial.
 Los cambios posteriores de acceso siguen gestionándose desde Configuración → Usuarios.
