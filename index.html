@@ -4323,8 +4323,7 @@ function renderTareasMats(){
   const cv=tms.value;
   tms.innerHTML='<option value="">Todos los módulos</option>'+mats.map(m=>`<option>${m}</option>`).join('');
   if(cv)tms.value=cv;
-  const tMat=document.getElementById('tMat');
-  if(tMat)tMat.innerHTML=mats.map(m=>`<option>${m}</option>`).join('');
+  // El filtro de la tabla no debe modificar el módulo del formulario de tarea.
 }
 window.onTGrupoChange = () => {
   const grupo = document.getElementById('tGrupo').value;
@@ -4526,7 +4525,7 @@ window.editTarea = (aid, tid) => {
   const al = DB.alumnos[aid];
   const mats = al ? asigDeGrupo(al.grupo) : (DB.asignaturas||[]);
   document.getElementById('tMat').innerHTML = mats.map(m=>`<option>${m}</option>`).join('');
-  setTimeout(()=>{ document.getElementById('tMat').value = t.materia; }, 30);
+  document.getElementById('tMat').value = t.materia;
 
   document.getElementById('mTarea').classList.add('open');
 };
